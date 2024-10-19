@@ -1,0 +1,15 @@
+services:
+  cliente:
+    build: .
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./src:/bACKup/src:ro
+      - ./makefile:/bACKup/makefile:ro
+  servidor:
+    build: .
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./src:/bACKup/src:ro
+      - ./makefile:/bACKup/makefile:ro
