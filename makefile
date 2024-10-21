@@ -1,6 +1,6 @@
 CPPFLAGS = -Wall -Wextra
 
-all: obj exe cliente servidor
+all: obj exe exe/cliente exe/servidor
 
 debug: CPPFLAGS+= -DDEBUG -g
 debug: all

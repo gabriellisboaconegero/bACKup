@@ -19,9 +19,9 @@ docker compose exec -it servidor /bin/bash
 Agora compile
 ```shell
 [cliente]: make
-[cliente]: ./cliente
+[cliente]: ./exe/cliente
 [servidor]: make
-[servidor]: ./servidor
+[servidor]: ./exe/servidor
 ```
  ## Recompilando
  Se voçê fez uma atualização no código não precisa subir novamente os
