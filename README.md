@@ -28,3 +28,9 @@ Agora compile
  containers, basta para o serviço que você mudou (`cliente` ou `servidor`)
  recompilar e rodar. A pasta `src` e o `makefile` ficam sincronizados entre
  os containers e seu diretório.
+
+## Parando o docker compose
+O docker vai continuar rodando até que vocẽ pare ele. Rodando
+```shell
+docker compose down
+```
