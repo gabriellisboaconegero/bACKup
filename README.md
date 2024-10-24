@@ -1,3 +1,13 @@
+# Decisões de projeto
+## Teste usando interface `loopback`
+Para evitar de ouvir duas vezes o pacote, fazemos uso da API `recvfrom` em
+uma versão debug, que permite acesso a informação de se o pacote estava 
+descendo ou subindo na interface, através do valor de `sll_pkttype`.
+
+## Solução final
+Para a solução final vamos continuar usando a API `recv`, porém deve
+ter cuidado ao escolher a interface de rede sem estar na versão de debug.
+
 # Como compilar e testar no docker
 O trabalho utiliza um abiente docker com dois containers que contém 
 uma network entre eles.

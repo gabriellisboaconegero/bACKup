@@ -15,6 +15,8 @@ services:
       - ./makefile:/bACKup/makefile:ro
 networks:
   default:
+    # Ler https://docs.docker.com/engine/network/drivers/macvlan/
+    # para entender o porque precisa do driver de macvlan e do parent=eth0
     driver: macvlan
     driver_opts:
       com.docker.network.macvlan.parent: "eth0"
