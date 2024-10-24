@@ -13,3 +13,8 @@ services:
     volumes:
       - ./src:/bACKup/src:ro
       - ./makefile:/bACKup/makefile:ro
+networks:
+  default:
+    driver: macvlan
+    driver_opts:
+      com.docker.network.macvlan.parent: "eth0"
