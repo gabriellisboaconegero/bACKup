@@ -3,6 +3,7 @@
 using namespace std;
 
 int main(int argc, char **argv) {
-    cout << "Inicicalizando cliente" << endl;
-    cliente("eth0");
+    char *interface = "lo";
+    cout << "Inicicalizando cliente (" << interface << ")" << endl;
+    cliente(interface);
 }

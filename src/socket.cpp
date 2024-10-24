@@ -1,19 +1,5 @@
-#include <arpa/inet.h>
-#include <net/ethernet.h>
-#include <linux/if_packet.h>
-#include <net/if.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <cerrno>
-#include <cstring>
-#include <iostream>
-#include <string>
-#include <ifaddrs.h>
-#include <sysexits.h>
-#include <sys/socket.h>
-#include <sys/types.h>
+#include "socket.h"
 using namespace std;
-const int MAX_MSG_LEN = 100;
 
 // ler os seguintes manuais para entender melhor o que essa função faz
 //      man packet
@@ -52,6 +38,46 @@ int cria_raw_socket(char* nome_interface_rede) {
     return soquete;
 }
 
+// ===================== Reciever =====================
+connection_t::connection_t(int sock, int max_msg_size) {
+    socket = sock;
+    max_size = max_msg_size;
+    err = 0;
+}
+
+bool connection_t::recv() {
+    socklen_t addr_len = sizeof(addr);
+    packet.resize(max_size, 0);
+    auto msg_len = recvfrom(socket, packet.data(), packet.size(), 0, (struct sockaddr*)&addr, &addr_len);
+    if (msg_len < 0){
+        err = errno;
+        return false;
+    }
+    packet.resize(msg_len);
+    return true;
+}
+
+string connection_t::erro2string() {
+    return strerror(err);
+}
+
+bool connection_t::valida_packet() {
+    // Verifica se é um outgoing packet.
+    // Evita receber os pacotes duplicados no loopback
+    // Vide:
+    //  - https://github.com/the-tcpdump-group/libpcap/blob/1c1d968bb3f3d163fa7f6d6802842a127304dd22/pcap-linux.c#L1352
+    //  - https://stackoverflow.com/a/17235405
+    //  - man recvfrom
+    //  - man packet
+    if (addr.sll_pkttype == PACKET_OUTGOING)
+        return false;
+    // TODO: Trocar par marcador de inicio
+    if (packet[0] != 'a')
+        return false;
+    return true;
+}
+// ===================== Reciever =====================
+
 void cliente(char *interface) {
     int socket = cria_raw_socket(interface);
     if (socket == -1){
@@ -73,30 +99,4 @@ void cliente(char *interface) {
         }
     }
     cout << "Saindo do cliente" << endl;
-}
-
-void servidor(char *interface) {
-    int socket = cria_raw_socket(interface);
-    if (socket == -1){
-        cout << "[ERRO]: Algo de errado com socket" << endl;
-        exit(1);
-    }
-
-    char *buf = new char [MAX_MSG_LEN+1]();
-    int msg_size;
-    while(1) {
-        if ((msg_size = recv(socket, buf, MAX_MSG_LEN, 0)) < 0){
-            cout << "[ERROR]: " << strerror(errno) << endl;
-        }else{
-            if (buf[0] != 'a')
-                continue;
-            cout << "MENSSAGEM RECEBIDA (size: " << msg_size << "): ";
-            for (int i = 0; i < msg_size; i++)
-                cout << buf[i];
-            cout << endl;
-        }
-    }
-    cout << "Saindo do servidor" << endl;
-
-    delete[] buf;
 }
