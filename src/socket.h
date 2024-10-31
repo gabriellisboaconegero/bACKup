@@ -11,6 +11,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/time.h>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
@@ -19,12 +20,22 @@
 #include <sysexits.h>
 
 // =========== Constantes ===========
+// Marcador de Inicio
+#define PACKET_MI 0x7e // 0b01111110
+
+// Tamnho maximo de respo
 #define MAX_MSG_LEN 100
 
+// Configuração de retransmissão
+#define PACKET_TIMEOUT_INTERVAL         250 // Tempo até retransmissão (em milisegundos)
+#define PACKET_RETRASMISSION_ROUNDS     10    // Quantidade de retransmissões máximas
+
 // Function return codes
-#define MSG_TO_BIG -1
-#define SEND_ERR -2
-#define OK 1
+#define MSG_TO_BIG      -1
+#define SEND_ERR        -2
+#define RECV_ERR        -3
+#define TIMEOUT_ERR     -4
+#define OK               1
 
 // Códigos do protocolo
 #define PKT_ACK             0b00000
@@ -79,13 +90,23 @@ struct connection_t {
     bool connect(char *);
 
     // Recebe o pacote, fica buscando até achar menssagem do protocolo
-    // Retorna false em caso de erro, true c.c.
-    bool recv_packet(struct packet_t *);
+    // Retorna RECV_ERR em caso de erro ao fazer recv
+    // Retorna Ok c.c.
+    int recv_packet(struct packet_t *);
 
     // Envia um packet.
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
     // Retorna SEND_ERR em caso de erro ao fazer send
     // Retorna OK c.c
-    int send_packet(uint8_t, std::string&);
+    int send_packet(uint8_t, std::vector<uint8_t> &);
+
+    // Envia um pacote e espera por uma resposta.
+    // Faz retransmissão de dados se tiver timeout, configurar PACKET_TIMEOUT e
+    // PACKET_RESTRANSMISSION.
+    // Retorna MSG_TO_BIG se menssagem for grande demais.
+    // Retorna SEND_ERR em caso de erro ao fazer send.
+    // Retorna TIMEOUT_ERR em caso de não recebimento de resposta.
+    // Retorna OK c.c.
+    int send_await_packet(uint8_t, std::vector<uint8_t> &, struct packet_t *);
 };
 // =========== Structs ===========

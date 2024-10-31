@@ -1,6 +1,15 @@
 #include "socket.h"
 using namespace std;
-#define PACKET_MI 0x7e // 0b01111110
+
+#ifdef DEBUG
+void print_packet(struct packet_t *pkt) {
+    printf("(tipo: %d, seq: %d, size: %d): ",
+                    pkt->tipo, pkt->seq, pkt->tam);
+    for (int i = 0; i < pkt->tam; i++)
+        cout << pkt->dados[i];
+    cout << endl;
+}
+#endif
 
 // ler os seguintes manuais para entender melhor o que essa função faz
 //      man packet
@@ -100,14 +109,12 @@ vector<uint8_t> packet_t::serialize() {
 
     return buf;
 }
-// Faz o parsing do pacote, retornando verdadeiro se o pacote é um pacote
-// correto do protocolo.
 // Valida o pacote com MI e loopback.
 // Verifica se o pacote é valido de acordo com protocolo
 // Ou seja:
 //  MI é 0b01111110 (0x7e)
 //  Se não é pacote de loopback
-bool parse_packet(struct packet_t *res, struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
+bool is_valid_packet(struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
     // Verifica se é um outgoing packet.
     // Evita receber os pacotes duplicados no loopback
     // Vide:
@@ -115,8 +122,8 @@ bool parse_packet(struct packet_t *res, struct sockaddr_ll addr, std::vector<uin
     //  - https://stackoverflow.com/a/17235405
     //  - man recvfrom
     //  - man packet
-    if (addr.sll_pkttype == PACKET_OUTGOING)
-        return false;
+    // if (addr.sll_pkttype == PACKET_OUTGOING)
+    //     return false;
 
     // Necessariamente tem marcador de inicio, tam, seq, tipo e crc, somando da 4 bytes
     if (buf.size() < PACKET_MIN_SIZE)
@@ -124,10 +131,6 @@ bool parse_packet(struct packet_t *res, struct sockaddr_ll addr, std::vector<uin
 
     // Verifica Marcador de inicio
     if (buf[0] != PACKET_MI)
-        return false;
-
-    // Constroe struct packet do buffer, se for possível
-    if(!res->deserialize(buf))
         return false;
 
     return true;
@@ -148,7 +151,7 @@ bool connection_t::connect(char *interface) {
 
 // Recebe o pacote, fica buscando até achar menssagem do protocolo
 // Retorna false em caso de erro, true c.c.
-bool connection_t::recv_packet(struct packet_t *pkt) {
+int connection_t::recv_packet(struct packet_t *pkt) {
     socklen_t addr_len = sizeof(addr);
     // Buffer para receber menssagem
     vector<uint8_t> buf;
@@ -158,22 +161,32 @@ bool connection_t::recv_packet(struct packet_t *pkt) {
 
         // Recebe
         auto msg_len = recvfrom(socket, buf.data(), buf.size(), 0, (struct sockaddr*)&addr, &addr_len);
+#ifdef DEBUG
+        printf("%ld\n", msg_len);
+#endif
         if (msg_len < 0)
-            return false;
+            return RECV_ERR;
 
         // Trunca para quantos bytes foram recebidos
         buf.resize(msg_len);
-    // Se o pacote não for valido continua tentando escutar
-    }while(!parse_packet(pkt, addr, buf));
+#ifdef DEBUG
+        for (auto i : buf)
+            printf("%x ", i);
+        printf("\n");
+        printf("OUTGGOING: %d\n", addr.sll_pkttype == PACKET_OUTGOING);
+#endif
+    // Se o pacote não for valido continua tentando escutar. Se o pacote não puder
+    // ser identificado também continua a escutar.
+    }while(!is_valid_packet(addr, buf) || !pkt->deserialize(buf));
 
-    return true;
+    return OK;
 }
 
 // Envia um packet.
 // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
 // Retorna SEND_ERR em caso de erro ao fazer send
 // Retorna OK c.c
-int connection_t::send_packet(uint8_t tipo, string &msg) {
+int connection_t::send_packet(uint8_t tipo, vector<uint8_t> &msg) {
     if (msg.size() > 63)
         return MSG_TO_BIG;
 
@@ -181,9 +194,6 @@ int connection_t::send_packet(uint8_t tipo, string &msg) {
     pkt.tam = (uint8_t)(msg.size());
     // Coloca sequência do pacote a ser enviado
     pkt.seq = seq;
-    // Atualiza sequência
-    seq = (seq + 1) % (1<<SEQ_SIZE);
-    cout << seq << endl;
     pkt.tipo = tipo;
     pkt.dados.resize(msg.size());
     copy(msg.begin(), msg.end(), pkt.dados.begin());
@@ -192,6 +202,102 @@ int connection_t::send_packet(uint8_t tipo, string &msg) {
     // Faz o send
     if (send(socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
+
+    // Atualiza sequência apenas se tudo der certo
+    seq = (seq + 1) % (1<<SEQ_SIZE);
+    return OK;
+}
+
+long long timestamp() {
+    struct timeval tp;
+    gettimeofday(&tp, NULL);
+    return tp.tv_sec*1000 + tp.tv_usec/1000;
+}
+
+// Recebe um pacote esperando por determinado intervalo. Coloca o pacote lido em pkt
+// se ele for de acordo com o protocolo.
+// Retorna RECV_ERR se der timeout
+// Retorna OK c.c
+int recv_with_timeout(struct connection_t *conn, int interval, struct packet_t *pkt) {
+    socklen_t addr_len = sizeof(conn->addr);
+    long long comeco = timestamp();
+    vector<uint8_t> buf;
+    struct timeval timeout = {
+        .tv_sec = interval/1000,
+        .tv_usec = (interval % 1000) * 1000
+    };
+
+    // Coloca timeout no socket, ver https://wiki.inf.ufpr.br/todt/doku.php?id=timeouts
+    setsockopt(conn->socket, SOL_SOCKET, SO_RCVTIMEO, (char*) &timeout, sizeof(timeout));
+    do {
+        buf.resize(MAX_MSG_LEN, 0);
+
+        auto msg_len = recvfrom(conn->socket, buf.data(), buf.size(), 0, (struct sockaddr*)&(conn->addr), &addr_len);
+        // Se tiver dado timeout/outro erro apenas continua o loop
+        if (msg_len < 0)
+            continue;
+
+        // Trunca para quantos bytes foram recebidos
+        buf.resize(msg_len);
+#ifdef DEBUG
+        printf("%ld\n", msg_len);
+        for (auto i : buf)
+            printf("%x ", i);
+        printf("\n");
+        printf("OUTGGOING: %d\n", conn->addr.sll_pkttype == PACKET_OUTGOING);
+#endif
+
+        // Se o pacote for valido então retona Ok
+        if (is_valid_packet(conn->addr, buf) && pkt->deserialize(buf))
+            return OK;
+    } while (timestamp() - comeco <= interval);
+
+    return RECV_ERR;
+}
+
+// Envia um pacote e espera por uma resposta.
+// Faz retransmissão de dados se tiver timeout, configurar PACKET_TIMEOUT e
+// PACKET_RESTRANSMISSION.
+// Retorna MSG_TO_BIG se menssagem for grande demais.
+// Retorna SEND_ERR em caso de erro ao fazer send.
+// Retorna TIMEOUT_ERR em caso de não recebimento de resposta.
+// Retorna OK c.c.
+int connection_t::send_await_packet(uint8_t tipo, std::vector<uint8_t> &msg, struct packet_t *r_pkt) {
+    if (msg.size() > 63)
+        return MSG_TO_BIG;
+
+    struct packet_t s_pkt;
+    int i;
+    s_pkt.tam = (uint8_t)(msg.size());
+    // Coloca sequência do pacote a ser enviado
+    s_pkt.seq = seq;
+    s_pkt.tipo = tipo;
+    s_pkt.dados.resize(msg.size());
+    copy(msg.begin(), msg.end(), s_pkt.dados.begin());
+    vector<uint8_t> s_buf = s_pkt.serialize();
+    int interval = PACKET_TIMEOUT_INTERVAL;
+
+    for (i = 0; i < PACKET_RETRASMISSION_ROUNDS; i++) {
+#ifdef DEBUG
+        printf("[DEBUG]: Tentativa (%d\\%d)\n", i+1, PACKET_RETRASMISSION_ROUNDS);
+#endif
+        // Faz o send
+        if (send(socket, s_buf.data(), s_buf.size(), 0) < 0)
+            return SEND_ERR;
+#ifdef DEBUG
+        printf("[DEBUG]: Menssagem enviada com sucesso\n");
+        printf("[DEBUG]: "); print_packet(&s_pkt);
+#endif
+        
+        if (recv_with_timeout(this, interval, r_pkt) >= 0)
+            break;
+    }
+    // Se alcançou o maximo de retransmissões
+    if (i == PACKET_RETRASMISSION_ROUNDS)
+        return TIMEOUT_ERR;
+
+    // Atualiza sequência
+    seq = (seq + 1) % (1<<SEQ_SIZE);
     return OK;
 }
 

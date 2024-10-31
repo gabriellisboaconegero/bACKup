@@ -16,6 +16,11 @@ void servidor(char *interface) {
             cout << "[ERRO]: " << strerror(errno) << endl;
             continue;
         }
+        string msg = "Resposta do servidor";
+        vector<uint8_t> umsg;
+        umsg.resize(msg.size());
+        copy(msg.begin(), msg.end(), umsg.begin());
+        conn.send_packet(PKT_ACK, umsg);
 
         printf("MENSSAGEM RECEBIDA (tipo: %d, seq: %d, size: %d): ",
                 packet.tipo, packet.seq, packet.tam);
@@ -27,7 +32,7 @@ void servidor(char *interface) {
 }
 
 int main(int argc, char **argv) {
-    char *interface = "lo";
+    char *interface = "dm-675ad8ccf0f1";
     cout << "Inicicalizando servidor (" << interface << ")" << endl;
     servidor(interface);
 }
