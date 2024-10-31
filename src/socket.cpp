@@ -44,21 +44,21 @@ int cria_raw_socket(char* nome_interface_rede) {
 // Desserializa os dados de um buffer em um packet.
 // Retorna falso se o packet é inválido.
 // Retorna true, c.c.
-bool packet_t::deserialize(vector<uchar> &buf) {
+bool packet_t::deserialize(vector<uint8_t> &buf) {
     // Os valores do buffer são (em binário de 1 byte)
     // buf[0] = 0bmmmmmmmm
     // buf[1] = 0bttttttss
     // buf[2] = 0bsssTTTTT
 
     // Pega tamanho
-    tam = int(buf[1] >> 2);
+    tam = buf[1] >> 2;
     // Pega sequencia
-    seq = int(((buf[1] & 0x03) << 3) & (buf[2] >> 5));
+    seq = ((buf[1] & 0x03) << 3) & (buf[2] >> 5);
     // Pega tipo
-    tipo = int(buf[2] & 0x1f);
+    tipo = buf[2] & 0x1f;
 
     // Quer dizer que não tem a quantidade correta de bytes enviados
-    if (int(buf.size()) - 4 < tam)
+    if (int(buf.size()) - 4 < int(tam))
         return false;
 
     // Verifica crc 8 bits dos campos tam, seq, tipo e dados
@@ -73,25 +73,25 @@ bool packet_t::deserialize(vector<uchar> &buf) {
 }
 
 // Serializa os dados de um packet em um buffer.
-vector<uchar> packet_t::serialize() {
+vector<uint8_t> packet_t::serialize() {
     // Os valores do buffer vão ficar (em binário de 1 byte)
     // buf[0] = 0bmmmmmmmm
     // buf[1] = 0bttttttss
     // buf[2] = 0bsssTTTTT
-    vector<uchar> buf(4+dados.size(), 0);
+    vector<uint8_t> buf(4+dados.size(), 0);
 
     // Marcador de inicio (m)
     buf[0] = PACKET_MI;
 
     // Tamanho (t)
-    buf[1] = (uchar)(tam << 2);
+    buf[1] = tam << 2;
 
     // Sequencia (s)
-    buf[1] |=  (uchar)(seq & 0x03);   // 00000011
-    buf[2]  = (uchar)((seq & 0x1c) << 5); // 00011100
+    buf[1] |=  seq & 0x03;   // 00000011
+    buf[2]  = (seq & 0x1c) << 5; // 00011100
 
     // Tipo (T)
-    buf[2] |= (uchar)(tipo & 0x1f);       // 00011111
+    buf[2] |= tipo & 0x1f;       // 00011111
 
     // Coloca dados no buffer
     copy(dados.begin(), dados.end(), buf.begin()+3);
@@ -107,7 +107,7 @@ vector<uchar> packet_t::serialize() {
 // Ou seja:
 //  MI é 0b01111110 (0x7e)
 //  Se não é pacote de loopback
-bool parse_packet(struct packet_t *res, struct sockaddr_ll addr, std::vector<uchar> &buf) {
+bool parse_packet(struct packet_t *res, struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
     // Verifica se é um outgoing packet.
     // Evita receber os pacotes duplicados no loopback
     // Vide:
@@ -139,7 +139,6 @@ bool parse_packet(struct packet_t *res, struct sockaddr_ll addr, std::vector<uch
 // Retorna false se não foi possivel criar socket.
 // Retorn true c.c.
 bool connection_t::connect(char *interface, int max_msg_size) {
-    max_size = max_msg_size;
     socket = cria_raw_socket(interface);
     if (socket < 0)
         return false;
@@ -151,10 +150,10 @@ bool connection_t::connect(char *interface, int max_msg_size) {
 bool connection_t::recv_packet(struct packet_t *pkt) {
     socklen_t addr_len = sizeof(addr);
     // Buffer para receber menssagem
-    vector<uchar> buf;
+    vector<uint8_t> buf;
     do {
         // Prepara buffer de recebimento
-        buf.resize(max_size, 0);
+        buf.resize(MAX_MSG_LEN, 0);
 
         // Recebe
         auto msg_len = recvfrom(socket, buf.data(), buf.size(), 0, (struct sockaddr*)&addr, &addr_len);
@@ -173,17 +172,17 @@ bool connection_t::recv_packet(struct packet_t *pkt) {
 // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
 // Retorna SEND_ERR em caso de erro ao fazer send
 // Retorna OK c.c
-int connection_t::send_packet(int tipo, string &msg) {
+int connection_t::send_packet(uint8_t tipo, string &msg) {
     if (msg.size() > 63)
         return MSG_TO_BIG;
 
     struct packet_t pkt;
-    pkt.tam = (int)(msg.size());
+    pkt.tam = (uint8_t)(msg.size());
     pkt.seq = 0;
     pkt.tipo = tipo;
     pkt.dados.resize(msg.size());
     copy(msg.begin(), msg.end(), pkt.dados.begin());
-    vector<uchar> buf = pkt.serialize();
+    vector<uint8_t> buf = pkt.serialize();
 
     // Faz o send
     if (send(socket, buf.data(), buf.size(), 0) < 0)
