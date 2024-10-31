@@ -173,14 +173,14 @@ bool connection_t::recv_packet(struct packet_t *pkt) {
 // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
 // Retorna SEND_ERR em caso de erro ao fazer send
 // Retorna OK c.c
-int connection_t::send_packet(uchar tipo, string &msg) {
+int connection_t::send_packet(int tipo, string &msg) {
     if (msg.size() > 63)
         return MSG_TO_BIG;
 
     struct packet_t pkt;
     pkt.tam = (int)(msg.size());
     pkt.seq = 0;
-    pkt.tipo = 1;
+    pkt.tipo = tipo;
     pkt.dados.resize(msg.size());
     copy(msg.begin(), msg.end(), pkt.dados.begin());
     vector<uchar> buf = pkt.serialize();

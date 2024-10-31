@@ -59,5 +59,5 @@ struct connection_t {
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
     // Retorna SEND_ERR em caso de erro ao fazer send
     // Retorna OK c.c
-    int send_packet(uchar, std::string&);
+    int send_packet(int, std::string&);
 };
