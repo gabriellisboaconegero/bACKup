@@ -53,12 +53,12 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     // Pega tamanho
     tam = buf[1] >> 2;
     // Pega sequencia
-    seq = ((buf[1] & 0x03) << 3) & (buf[2] >> 5);
+    seq = ((buf[1] & 0x03) << 3) | (buf[2] >> 5);
     // Pega tipo
     tipo = buf[2] & 0x1f;
 
-    // Quer dizer que não tem a quantidade correta de bytes enviados
-    if (int(buf.size()) - 4 < int(tam))
+    // Quer dizer que não tem a quantidade correta de bytes enviados em dados
+    if (int(buf.size()) - PACKET_MIN_SIZE < int(tam))
         return false;
 
     // Verifica crc 8 bits dos campos tam, seq, tipo e dados
@@ -78,7 +78,7 @@ vector<uint8_t> packet_t::serialize() {
     // buf[0] = 0bmmmmmmmm
     // buf[1] = 0bttttttss
     // buf[2] = 0bsssTTTTT
-    vector<uint8_t> buf(4+dados.size(), 0);
+    vector<uint8_t> buf(PACKET_MIN_SIZE+dados.size(), 0);
 
     // Marcador de inicio (m)
     buf[0] = PACKET_MI;
@@ -87,13 +87,13 @@ vector<uint8_t> packet_t::serialize() {
     buf[1] = tam << 2;
 
     // Sequencia (s)
-    buf[1] |=  seq & 0x03;   // 00000011
-    buf[2]  = (seq & 0x1c) << 5; // 00011100
+    buf[1] |= (seq & 0x18) >> 3; // 00011000
+    buf[2]  = (seq & 0x07) << 5; // 00000111
 
     // Tipo (T)
     buf[2] |= tipo & 0x1f;       // 00011111
 
-    // Coloca dados no buffer
+    // Coloca dados no buffer, dado offset de 3 bytes
     copy(dados.begin(), dados.end(), buf.begin()+3);
     // gera crc 8 bits
     /* buf[buf.size() - 1] = gen_crc(buf); */
@@ -119,7 +119,7 @@ bool parse_packet(struct packet_t *res, struct sockaddr_ll addr, std::vector<uin
         return false;
 
     // Necessariamente tem marcador de inicio, tam, seq, tipo e crc, somando da 4 bytes
-    if (buf.size() < 4)
+    if (buf.size() < PACKET_MIN_SIZE)
         return false;
 
     // Verifica Marcador de inicio
@@ -138,8 +138,9 @@ bool parse_packet(struct packet_t *res, struct sockaddr_ll addr, std::vector<uin
 // Cria raw socket de conexão e inicializa struct.
 // Retorna false se não foi possivel criar socket.
 // Retorn true c.c.
-bool connection_t::connect(char *interface, int max_msg_size) {
+bool connection_t::connect(char *interface) {
     socket = cria_raw_socket(interface);
+    seq = 0;
     if (socket < 0)
         return false;
     return true;
@@ -178,7 +179,11 @@ int connection_t::send_packet(uint8_t tipo, string &msg) {
 
     struct packet_t pkt;
     pkt.tam = (uint8_t)(msg.size());
-    pkt.seq = 0;
+    // Coloca sequência do pacote a ser enviado
+    pkt.seq = seq;
+    // Atualiza sequência
+    seq = (seq + 1) % (1<<SEQ_SIZE);
+    cout << seq << endl;
     pkt.tipo = tipo;
     pkt.dados.resize(msg.size());
     copy(msg.begin(), msg.end(), pkt.dados.begin());

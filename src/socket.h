@@ -39,6 +39,17 @@
 #define PKT_DADOS           0b10000
 #define PKT_FIM_TX_DADOS    0b10001
 #define PKT_ERRO            0b11111
+
+// Macros de tamanho de cada campo do protocolo em bits
+#define MI_SIZE             8
+#define TAM_SIZE            6
+#define SEQ_SIZE            5
+#define TIPO_SIZE           5
+#define CRC_SIZE            8
+// Tamanho minimo e maximo de um packet e dados (em bytes)
+#define PACKET_MIN_SIZE         ((MI_SIZE + TAM_SIZE + SEQ_SIZE + TIPO_SIZE + CRC_SIZE)/8)
+#define PACKET_MAX_DADOS_SIZE   ((1<<TAM_SIZE)-1)
+#define PACKET_MAX_SIZE         (PACKET_MIN_SIZE + PACKET_MAX_DADOS_SIZE)
 // =========== Constantes ===========
 
 // =========== Structs ===========
@@ -59,12 +70,13 @@ struct packet_t {
 // Struct responsavel por comunicação na rede, recebe e manda pacotes.
 struct connection_t {
     int socket;
+    uint8_t seq;
     struct sockaddr_ll addr;
 
     // Cria raw socket de conexão e inicializa struct.
     // Retorna false se não foi possivel criar socket.
     // Retorn true c.c.
-    bool connect(char *, int);
+    bool connect(char *);
 
     // Recebe o pacote, fica buscando até achar menssagem do protocolo
     // Retorna false em caso de erro, true c.c.

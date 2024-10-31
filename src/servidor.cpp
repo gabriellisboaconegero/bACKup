@@ -4,7 +4,7 @@ using namespace std;
 void servidor(char *interface) {
     struct connection_t conn;
     struct packet_t packet;
-    if (!conn.connect(interface, MAX_MSG_LEN)) {
+    if (!conn.connect(interface)) {
         cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
         cout << "[ERRO]: " << strerror(errno) << endl;
         exit(1);
@@ -17,8 +17,9 @@ void servidor(char *interface) {
             continue;
         }
 
-        printf("MENSSAGEM RECEBIDA (tipo: %d, size: %ld): ", packet.tipo, packet.dados.size());
-        for (int i = 0; i < int(packet.dados.size()); i++)
+        printf("MENSSAGEM RECEBIDA (tipo: %d, seq: %d, size: %d): ",
+                packet.tipo, packet.seq, packet.tam);
+        for (int i = 0; i < packet.tam; i++)
             cout << packet.dados[i];
         cout << endl;
     }

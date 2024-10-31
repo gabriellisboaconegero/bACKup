@@ -4,7 +4,7 @@ using namespace std;
 
 void cliente(char *interface) {
     struct connection_t conn;
-    if (!conn.connect(interface, MAX_MSG_LEN)) {
+    if (!conn.connect(interface)) {
         cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
         cout << "[ERRO]: " << strerror(errno) << endl;
         exit(1);
