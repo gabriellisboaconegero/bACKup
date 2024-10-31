@@ -3,6 +3,7 @@ using namespace std;
 
 void servidor(char *interface) {
     struct connection_t conn;
+    struct packet_t packet;
     if (!conn.connect(interface, MAX_MSG_LEN)) {
         cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
         cout << "[ERRO]: " << strerror(errno) << endl;
@@ -10,8 +11,7 @@ void servidor(char *interface) {
     }
 
     while(1) {
-        auto [packet, err] = conn.recv_packet();
-        if (err) {
+        if (!conn.recv_packet(&packet)) {
             cout << "[ERRO]: Erro ao receber pacote do socket" << endl;
             cout << "[ERRO]: " << strerror(errno) << endl;
             continue;

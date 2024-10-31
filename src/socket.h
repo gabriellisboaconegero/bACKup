@@ -18,36 +18,46 @@
 #include <vector>
 #include <sysexits.h>
 
-const int MAX_MSG_LEN = 100;
+using uchar = unsigned char;
+
+// Constantes
+#define MAX_MSG_LEN 100
+#define MSG_TO_BIG -1
+#define SEND_ERR -2
+#define OK 1
 
 struct packet_t {
     int tipo;
     int tam;
     int seq;
-    std::vector<char> dados;
+    std::vector<uchar> dados;
 
+    // Desserializa os dados de um buffer em um packet.
+    // Retorna falso se o packet é inválido.
+    // Retorna true, c.c.
+    bool deserialize(std::vector<uchar> &buf);
+    // Serializa os dados de um packet em um buffer.
+    std::vector<uchar> serialize();
 };
 
-// Struct responsavel por comunicação na rede, recebe e manda pacotes
-// Por agora só faz a função de receiver, mas a ideia é que mude o nome
-// e vire um connection_t.
+// Struct responsavel por comunicação na rede, recebe e manda pacotes.
 struct connection_t {
     int max_size;
     int socket;
-    struct packet_t packet;
     struct sockaddr_ll addr;
 
+    // Cria raw socket de conexão e inicializa struct.
+    // Retorna false se não foi possivel criar socket.
+    // Retorn true c.c.
     bool connect(char *, int);
 
-    // Recebe o pacote
-    std::pair<struct packet_t, bool> recv_packet();
+    // Recebe o pacote, fica buscando até achar menssagem do protocolo
+    // Retorna false em caso de erro, true c.c.
+    bool recv_packet(struct packet_t *);
 
-    // Envia um packet
-    bool send_packet(int, std::string&);
-
-    // Retorna tipo e dados do pacote recebido
-    std::pair<int, std::vector<char>> get_packet();
-
+    // Envia um packet.
+    // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
+    // Retorna SEND_ERR em caso de erro ao fazer send
+    // Retorna OK c.c
+    int send_packet(uchar, std::string&);
 };
-int cria_raw_socket(char *interface);
-void cliente(char *interface);

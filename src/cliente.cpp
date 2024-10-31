@@ -16,7 +16,7 @@ void cliente(char *interface) {
         cin >> msg;
         if (msg == "q")
             break;
-        if (!conn.send_packet(1, msg)) {
+        if (conn.send_packet(1, msg) < 0) {
             cout << "[ERROR]: " << strerror(errno) << endl;
         }
     }
