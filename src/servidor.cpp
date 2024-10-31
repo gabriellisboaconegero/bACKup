@@ -2,26 +2,24 @@
 using namespace std;
 
 void servidor(char *interface) {
-    int socket = cria_raw_socket(interface);
-    if (socket == -1){
-        cout << "[ERRO]: Algo de errado com socket" << endl;
+    struct connection_t conn;
+    if (!conn.connect(interface, MAX_MSG_LEN)) {
+        cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
+        cout << "[ERRO]: " << strerror(errno) << endl;
         exit(1);
     }
-    struct connection_t conn(socket, MAX_MSG_LEN);
 
     while(1) {
-        if (!conn.recv()){
-            cout << "[ERRO]: Erro ao receber do socket: " << conn.erro2string();
+        auto [packet, err] = conn.recv_packet();
+        if (err) {
+            cout << "[ERRO]: Erro ao receber pacote do socket" << endl;
+            cout << "[ERRO]: " << strerror(errno) << endl;
             continue;
         }
 
-        if (!conn.valida_packet())
-            continue;
-
-        vector<char> pck = conn.packet;
-        cout << "MENSSAGEM RECEBIDA (size: " << pck.size() << "): ";
-        for (int i = 0; i < pck.size(); i++)
-            cout << pck[i];
+        printf("MENSSAGEM RECEBIDA (tipo: %d, size: %ld): ", packet.tipo, packet.dados.size());
+        for (int i = 0; i < int(packet.dados.size()); i++)
+            cout << packet.dados[i];
         cout << endl;
     }
     cout << "Saindo do servidor" << endl;

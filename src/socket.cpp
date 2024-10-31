@@ -1,5 +1,31 @@
 #include "socket.h"
 using namespace std;
+#define PACKET_MI 0x7e // 0b01111110
+// Bitmask de cada campo do packet
+// Marcador de inicio (8bits / 1 byte)
+// hex: f    f     0    0     0    0     0    0
+// bin: 1111 1111  0000 0000  0000 0000  0000 0000
+#define MI_BITMASK 0xff000000
+#define MI_OFFSET 24
+#define get_mi(inter) ((inter & MI_BITMASK) >> MI_OFFSET)
+
+// Tamanho(6 bits)
+// hex: 0    0     f    c     0    0     0    0
+// bin: 0000 0000  1111 1100  0000 0000  0000 0000
+#define TAM_BITMASK 0x00fc0000
+#define TAM_OFFSET 18
+
+// Sequencia (5 bits)
+// hex: 0    0     0    3     e    0     0    0
+// bin: 0000 0000  0000 0011  1110 0000  0000 0000
+#define SEQ_BITMASK 0x0003e000
+#define SEQ_OFFSET 13
+
+// Tipo (5 bits)
+// hex: 0    0     0    0     1    f     0    0
+// bin: 0000 0000  0000 0000  0001 1111  0000 0000
+#define TIPO_BITMASK 0x00001f00
+#define TIPO_OFFSET 8
 
 // ler os seguintes manuais para entender melhor o que essa função faz
 //      man packet
@@ -38,30 +64,15 @@ int cria_raw_socket(char* nome_interface_rede) {
     return soquete;
 }
 
-// ===================== Reciever =====================
-connection_t::connection_t(int sock, int max_msg_size) {
-    socket = sock;
-    max_size = max_msg_size;
-    err = 0;
-}
 
-bool connection_t::recv() {
-    socklen_t addr_len = sizeof(addr);
-    packet.resize(max_size, 0);
-    auto msg_len = recvfrom(socket, packet.data(), packet.size(), 0, (struct sockaddr*)&addr, &addr_len);
-    if (msg_len < 0){
-        err = errno;
-        return false;
-    }
-    packet.resize(msg_len);
-    return true;
-}
-
-string connection_t::erro2string() {
-    return strerror(err);
-}
-
-bool connection_t::valida_packet() {
+// ===================== Packet =====================
+    // Faz o parsing do pacote, retornando verdadeiro se o pacote é válido
+    // Valida o pacote com MI e loopback.
+    // Verifica se o pacote é valido de acordo com protocolo
+    // Ou seja:
+    //  MI é 0b01111110 (0x7e)
+    //  Se não é pacote de loopback
+pair<struct packet_t, bool> parse_packet(struct sockaddr_ll addr, std::vector<char> &buf) {
     // Verifica se é um outgoing packet.
     // Evita receber os pacotes duplicados no loopback
     // Vide:
@@ -69,34 +80,115 @@ bool connection_t::valida_packet() {
     //  - https://stackoverflow.com/a/17235405
     //  - man recvfrom
     //  - man packet
+    struct packet_t res;
     if (addr.sll_pkttype == PACKET_OUTGOING)
-        return false;
-    // TODO: Trocar par marcador de inicio
-    if (packet[0] != 'a')
+        return make_pair(res, true);
+
+    // Necessariamente tem marcador de inicio, tam, seq, tipo e crc, somando da 4 bytes
+    if (buf.size() < 4)
+        return make_pair(res, true);
+
+    int first_4bytes = 0;
+    first_4bytes |= (buf[0] << 24);
+    first_4bytes |= (buf[1] << 16);
+    first_4bytes |= (buf[2] << 8);
+
+    // Verifica marcador de inicio
+    if ((first_4bytes & MI_BITMASK) >> MI_OFFSET != PACKET_MI)
+        return make_pair(res, true);
+    
+    // Pega tamanho
+    res.tam = first_4bytes & TAM_BITMASK;
+    // Pega sequencia
+    res.seq = first_4bytes & SEQ_BITMASK;
+    // Pega tipo
+    res.tipo = first_4bytes & TIPO_BITMASK;
+    
+    // Quer dizer que não tem a quantidade correta de bytes enviados
+    if (buf.size() - 4 < res.tam)
+        return make_pair(res, true);
+
+    // Verifica crc 8 bits dos campos tam, seq, tipo e dados
+    /* if(!verify_crc8()) */
+    /*     return make_pair(res, false); */
+
+    // Copia os dados da menssagem, que começam depois de mi, tam, seq e tipo e acabam antes de crc
+    res.dados.resize(res.tam, 0);
+    copy(buf.begin()+3, buf.begin()+3+res.tam, res.dados.begin());
+    return make_pair(res, false);
+}
+// ===================== Packet =====================
+
+// ===================== Connection =====================
+bool connection_t::connect(char *interface, int max_msg_size) {
+    max_size = max_msg_size;
+    socket = cria_raw_socket(interface);
+    if (socket < 0)
         return false;
     return true;
 }
-// ===================== Reciever =====================
 
-void cliente(char *interface) {
-    int socket = cria_raw_socket(interface);
-    if (socket == -1){
-        cout << "[ERRO]: Algo de errado com socket" << endl;
-        exit(1);
-    }
+// Recebe menssagem do socket, fica buscando até uma menssagem válida
+pair<struct packet_t, bool> connection_t::recv_packet() {
+    socklen_t addr_len = sizeof(addr);
+    // Buffer para receber menssagem
+    vector<char> buf;
+    pair<struct packet_t, bool> res;
+    do {
+        // Prepara buffer de recebimento
+        buf.resize(max_size, 0);
 
-    string msg;
-    while(1) {
-        cout << "Escreva uma menssagem (q para sair): ";
-        cin >> msg;
-        if (msg == "q")
-            break;
-        if (msg.size() <= 14){
-            cout << "[WARNING]: Menssagem com menos de 14 caracteres" << endl;
-        }
-        if (send(socket, msg.c_str(), msg.size(), 0) < 0){
-            cout << "[ERROR]: " << strerror(errno) << endl;
-        }
-    }
-    cout << "Saindo do cliente" << endl;
+        // Recebe
+        auto msg_len = recvfrom(socket, buf.data(), buf.size(), 0, (struct sockaddr*)&addr, &addr_len);
+        cout << msg_len << endl;
+        if (msg_len < 0)
+            return make_pair(packet, true);
+
+        // Trunca para quantos bytes foram recebidos
+        buf.resize(msg_len);
+        // Se o pacote não for valido continua tentando escutar
+        res = parse_packet(addr, buf);
+    }while(res.second);
+
+    return res;
 }
+
+bool connection_t::send_packet(int tipo, string &msg) {
+    if (msg.size() > 64)
+        return false;
+    int seq = 0;
+    vector<char> buf(4+msg.size(), 0);
+
+    int first_4byte = 0;
+    // Coloca marcador de inicio
+    first_4byte |= PACKET_MI;
+
+    // Coloca tamanho
+    first_4byte <<= 6;
+    first_4byte |= (char)(msg.size() & 0b111111);
+
+    // Coloca sequencia
+    first_4byte <<= 5;
+    first_4byte |= (char)(seq & 0b11111);
+
+    // Coloca tipo
+    first_4byte <<= 5;
+    first_4byte |= (char)(tipo & 0b11111);
+
+    // Coloca dentro do buffer
+    buf[0] = (char)((first_4byte & 0xff0000) >> 16);
+    buf[1] = (char)((first_4byte & 0x00ff00) >> 8);
+    buf[2] = (char)((first_4byte & 0x0000ff) >> 0);
+
+    // Coloca dados no buffer
+    copy(msg.begin(), msg.end(), buf.begin()+3);
+    // gera crc 8 bits
+    /* buf[buf.size() - 1] = gen_crc(buf); */
+
+    // Faz o send
+    if (send(socket, buf.data(), buf.size(), 0) < 0)
+        return false;
+    return true;
+}
+
+// ===================== Connection =====================

@@ -20,29 +20,34 @@
 
 const int MAX_MSG_LEN = 100;
 
+struct packet_t {
+    int tipo;
+    int tam;
+    int seq;
+    std::vector<char> dados;
+
+};
+
 // Struct responsavel por comunicação na rede, recebe e manda pacotes
 // Por agora só faz a função de receiver, mas a ideia é que mude o nome
 // e vire um connection_t.
 struct connection_t {
-    std::vector<char> packet;
     int max_size;
     int socket;
-    int err;
+    struct packet_t packet;
     struct sockaddr_ll addr;
 
-    connection_t (int, int);
+    bool connect(char *, int);
+
     // Recebe o pacote
-    bool recv();
+    std::pair<struct packet_t, bool> recv_packet();
 
-    // Retorna uma string do erro se tiver
-    std::string erro2string();
+    // Envia um packet
+    bool send_packet(int, std::string&);
 
-    // Valida o pacote com MI e loopback.
-    // Verifica se o pacote é valido de acordo com protocolo
-    // Ou seja:
-    //  MI é 0b01111110 (0x7e)
-    //  Se não é pacote de loopback
-    bool valida_packet();
+    // Retorna tipo e dados do pacote recebido
+    std::pair<int, std::vector<char>> get_packet();
+
 };
 int cria_raw_socket(char *interface);
 void cliente(char *interface);
