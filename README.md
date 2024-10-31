@@ -1,4 +1,11 @@
 # Decisões de projeto
+## Serialização e Desserialização de pacotes
+Uma estrutura `packet_t` foi criada para poder ser o objeto recebido e enviado
+pela rede. Para poder enviar a estrutura sem usar bitfields foi necessário enviar
+um buffer que contém as informações descritas no protocolo. Para não utilizar o buffer
+durante o código foi decidio serializar a estrutura `packet_t` no buffer ap enviar pela
+rede, e desserializar do buffer ao receber da rede.
+
 ## Teste usando interface `loopback`
 Para evitar de ouvir duas vezes o pacote, fazemos uso da API `recvfrom` em
 uma versão debug, que permite acesso a informação de se o pacote estava 
