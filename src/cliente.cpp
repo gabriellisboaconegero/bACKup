@@ -1,10 +1,11 @@
 #include "socket.h"
+#include "utils.h"
 using namespace std;
 
-void cliente(char *interface) {
+void cliente(string interface) {
     struct connection_t conn;
     struct packet_t pkt;
-    if (!conn.connect(interface)) {
+    if (!conn.connect(interface.data())) {
         cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
         cout << "[ERRO]: " << strerror(errno) << endl;
         exit(1);
@@ -36,7 +37,19 @@ void cliente(char *interface) {
 }
 
 int main(int argc, char **argv) {
-    char *interface = "dm-675ad8ccf0f1";
-    cout << "Inicicalizando cliente (" << interface << ")" << endl;
-    cliente(interface);
+    int num;
+    cout << "Escolha a interface de rede para usar: " << endl;
+    vector<string> interfaces;
+    if (get_interfaces(interfaces) < 0) {
+        cout << "[ERRO]: Erro ao obter as interfaces de rede" << endl;
+        exit(1);
+    }
+    for (int i = 0; i < int(interfaces.size()); i++) {
+        printf("\t%d - %s\n", i, interfaces[i].data());
+    }
+    cout << ">> ";
+    cin >> num;
+    num %= int(interfaces.size());
+    cout << "Inicicalizando cliente (" << interfaces[num] << ")" << endl;
+    cliente(interfaces[num].data());
 }

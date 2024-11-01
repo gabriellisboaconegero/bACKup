@@ -87,7 +87,7 @@ struct connection_t {
     // Cria raw socket de conexão e inicializa struct.
     // Retorna false se não foi possivel criar socket.
     // Retorn true c.c.
-    bool connect(char *);
+    bool connect(const char *);
 
     // Recebe o pacote, fica buscando até achar menssagem do protocolo
     // Retorna RECV_ERR em caso de erro ao fazer recv

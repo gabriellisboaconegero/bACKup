@@ -17,10 +17,10 @@ obj/servidor.o: src/servidor.cpp
 # ================ objetos ================
 
 # ================ executaveis ================
-exe/cliente: obj/cliente.o obj/socket.o
+exe/cliente: obj/cliente.o obj/socket.o obj/utils.o
 	g++ $^ -o $@ 
 
-exe/servidor: obj/servidor.o obj/socket.o
+exe/servidor: obj/servidor.o obj/socket.o obj/utils.o
 	g++ $^ -o $@ 
 # ================ executaveis ================
 

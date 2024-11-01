@@ -15,7 +15,7 @@ void print_packet(struct packet_t *pkt) {
 //      man packet
 //      man socket
 //      man setsockopt
-int cria_raw_socket(char* nome_interface_rede) {
+int cria_raw_socket(const char* nome_interface_rede) {
     // Cria arquivo para o socket sem qualquer protocolo
     int soquete = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
     if (soquete == -1) {
@@ -141,7 +141,7 @@ bool is_valid_packet(struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
 // Cria raw socket de conexão e inicializa struct.
 // Retorna false se não foi possivel criar socket.
 // Retorn true c.c.
-bool connection_t::connect(char *interface) {
+bool connection_t::connect(const char *interface) {
     socket = cria_raw_socket(interface);
     seq = 0;
     if (socket < 0)
