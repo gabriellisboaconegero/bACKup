@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 #include <sysexits.h>
+#include <functional>
 
 // =========== Constantes ===========
 // Marcador de Inicio
@@ -35,6 +36,7 @@
 #define SEND_ERR        -2
 #define RECV_ERR        -3
 #define TIMEOUT_ERR     -4
+#define RECV_TIMEOUT    -5
 #define OK               1
 
 // Códigos do protocolo
@@ -92,7 +94,8 @@ struct connection_t {
     // Recebe o pacote, fica buscando até achar menssagem do protocolo
     // Retorna RECV_ERR em caso de erro ao fazer recv
     // Retorna Ok c.c.
-    int recv_packet(struct packet_t *);
+    int recv_packet(struct packet_t *pkt,
+                    std::function<bool(struct packet_t *)>);
 
     // Envia um packet.
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
@@ -100,13 +103,19 @@ struct connection_t {
     // Retorna OK c.c
     int send_packet(uint8_t, std::vector<uint8_t> &);
 
-    // Envia um pacote e espera por uma resposta.
+    // Envia um pacote e espera por uma resposta. O pacote de resposta deve ser aceito
+    // pela função is_espected_packet, passada como parametro para a função.
+    //      is_espected_packet: Retorna true se o packet é esperado
+    //                          Retorna falso c.c.
     // Faz retransmissão de dados se tiver timeout, configurar PACKET_TIMEOUT e
     // PACKET_RESTRANSMISSION.
     // Retorna MSG_TO_BIG se menssagem for grande demais.
     // Retorna SEND_ERR em caso de erro ao fazer send.
     // Retorna TIMEOUT_ERR em caso de não recebimento de resposta.
     // Retorna OK c.c.
-    int send_await_packet(uint8_t, std::vector<uint8_t> &, struct packet_t *);
+    int send_await_packet(uint8_t,
+                          std::vector<uint8_t> &,
+                          struct packet_t *,
+                          std::function<bool(struct packet_t *)>);
 };
 // =========== Structs ===========

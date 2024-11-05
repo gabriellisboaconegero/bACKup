@@ -20,15 +20,17 @@ void cliente(string interface) {
             break;
         umsg.resize(msg.size());
         copy(msg.begin(), msg.end(), umsg.begin());
-        int res = conn.send_await_packet(1, umsg, &pkt);
+        int res = conn.send_await_packet(PKT_RESTAURA, umsg, &pkt,
+            [](struct packet_t *pkt) -> bool {
+                uint8_t tipo = pkt->tipo;
+                return tipo == PKT_ACK || tipo == PKT_NACK || tipo == PKT_ERRO;
+            }
+        );
         if (res == TIMEOUT_ERR) {
             printf("[ERRO]: TimeOut - Não foi possivel enviar o pacote\n");
         } else if (res == OK) {
-            printf("MENSSAGEM RECEBIDA (tipo: %d, seq: %d, size: %d): ",
-                    pkt.tipo, pkt.seq, pkt.tam);
-            for (int i = 0; i < pkt.tam; i++)
-                cout << pkt.dados[i];
-            cout << endl;
+            printf("[MENSSAGEM RECEBIDA]: ");
+            print_packet(&pkt);
         } else {
             cout << "[ERROR]: " << strerror(errno) << endl;
         }

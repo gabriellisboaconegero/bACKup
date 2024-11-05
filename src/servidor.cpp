@@ -4,7 +4,7 @@ using namespace std;
 
 void servidor(string interface) {
     struct connection_t conn;
-    struct packet_t packet;
+    struct packet_t pkt;
     if (!conn.connect(interface.data())) {
         cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
         cout << "[ERRO]: " << strerror(errno) << endl;
@@ -12,22 +12,24 @@ void servidor(string interface) {
     }
 
     while(1) {
-        if (!conn.recv_packet(&packet)) {
+        if (conn.recv_packet(&pkt, [](struct packet_t *pkt){
+            return pkt->tipo == PKT_RESTAURA ||
+            pkt->tipo == PKT_BACKUP ||
+            pkt->tipo == PKT_VERIFICA;
+        }) < 0) {
             cout << "[ERRO]: Erro ao receber pacote do socket" << endl;
             cout << "[ERRO]: " << strerror(errno) << endl;
-            continue;
+            break;
         }
+        printf("[MENSSAGEM RECEBIDA]: ");
+        print_packet(&pkt);
+
+        cout << "Respondendo cliente" << endl;
         string msg = "Resposta do servidor";
         vector<uint8_t> umsg;
         umsg.resize(msg.size());
         copy(msg.begin(), msg.end(), umsg.begin());
         conn.send_packet(PKT_ACK, umsg);
-
-        printf("MENSSAGEM RECEBIDA (tipo: %d, seq: %d, size: %d): ",
-                packet.tipo, packet.seq, packet.tam);
-        for (int i = 0; i < packet.tam; i++)
-            cout << packet.dados[i];
-        cout << endl;
     }
     cout << "Saindo do servidor" << endl;
 }
