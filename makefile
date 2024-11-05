@@ -1,6 +1,6 @@
 CPPFLAGS = -Wall -Wextra
 
-# all: CPPFLAGS+= -DDOCKER_TEST
+all: CPPFLAGS+= -DDOCKER_TEST
 all: obj exe exe/cliente exe/servidor
 
 debug2: CPPFLAGS+= -DDEBUG2

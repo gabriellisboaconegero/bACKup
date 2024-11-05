@@ -1,5 +1,6 @@
 #include "socket.h"
 #include "utils.h"
+#define SEND_NACK 101
 using namespace std;
 
 void cliente(string interface) {
@@ -14,25 +15,49 @@ void cliente(string interface) {
     string msg;
     vector<uint8_t> umsg;
     while(1) {
-        cout << "Escreva uma menssagem (q para sair): ";
+        cout << "Escolha um aquivo para recuperar (q para sair): ";
         cin >> msg;
         if (msg == "q")
             break;
         umsg.resize(msg.size());
         copy(msg.begin(), msg.end(), umsg.begin());
         int res = conn.send_await_packet(PKT_RESTAURA, umsg, &pkt,
-            [](struct packet_t *pkt) -> bool {
-                uint8_t tipo = pkt->tipo;
-                return tipo == PKT_ACK || tipo == PKT_NACK || tipo == PKT_ERRO;
+            [](struct packet_t *pkt, vector<uint8_t> &buf) -> int {
+                // Se houver errro na desserialização do pacote
+                if (!pkt->deserialize(buf))
+                    return SEND_NACK;
+
+                // Se for um nack continua mandando
+                if (pkt->tipo == PKT_NACK)
+                    return DONT_ACCEPT;
+
+                // Se pacote não for o esperad
+                if (pkt->tipo != PKT_OK_TAM &&
+                    pkt->tipo != PKT_NACK   &&
+                    pkt->tipo != PKT_ERRO)
+                    return SEND_NACK;
+
+                return OK;
             }
         );
-        if (res == TIMEOUT_ERR) {
-            printf("[ERRO]: TimeOut - Não foi possivel enviar o pacote\n");
-        } else if (res == OK) {
-            printf("[MENSSAGEM RECEBIDA]: ");
-            print_packet(&pkt);
-        } else {
-            cout << "[ERROR]: " << strerror(errno) << endl;
+
+        // Limpa umsg
+        umsg.clear();
+        umsg.resize(20, 0);
+
+        switch (res) {
+            case RECV_TIMEOUT:
+                printf("[ERRO]: TimeOut - Não foi possivel enviar o pacote\n");
+                break;
+            case SEND_NACK:
+                printf("[ERRO]: Pacote com err\n");
+                break;
+            case OK:
+                printf("[MENSSAGEM RECEBIDA]: ");
+                print_packet(&pkt);
+                break;
+            default:
+                cout << "[ERROR]: " << strerror(errno) << endl;
         }
     }
     cout << "Saindo do cliente" << endl;

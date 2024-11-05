@@ -179,13 +179,18 @@ long long timestamp() {
     return tp.tv_sec*1000 + tp.tv_usec/1000;
 }
 
-// Recebe um pacote esperando por determinado intervalo. Coloca o pacote lido em pkt
-// se ele for de acordo com o protocolo.
-// Retorna RECV_TIMEOUT se der timeout
-// Retorna RECV_ERR se der erro
-// Retorna OK c.c
+// Espera por um pacote. O pacote recebido é processado
+// pela função process_buf, onde ela decide quais ações tomar com o buffer
+// que foi recebido. É garantido que o buffer vai ter o marcador de inicio
+// do protocolo.
+// Se o valor retornado pela função de parametro for DONT_ACCEPT
+// então o pacote não é aceito e o loop continua.
+// Intervalo ser zero é sem timeout.
+// Retorna RECV_ERR em caso de erro ao fazer recv.
+// Retorna RECV_TIMEOUT em caso de não recebimento de resposta.
+// Retorna valor da função de parametro c.c.
 int connection_t::recv_packet(int interval, struct packet_t *pkt,
-        std::function<bool(struct packet_t *)> is_espected_packet) {
+        std::function<int(struct packet_t *, vector<uint8_t> &)> process_buf) {
     socklen_t addr_len = sizeof(this->addr);
     long long comeco = timestamp();
     vector<uint8_t> buf;
@@ -194,7 +199,9 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt,
     timeout.tv_usec = (interval % 1000) * 1000;
 
     // Coloca timeout no socket, ver https://wiki.inf.ufpr.br/todt/doku.php?id=timeouts
-    setsockopt(this->socket, SOL_SOCKET, SO_RCVTIMEO, (char*) &timeout, sizeof(timeout));
+    if (setsockopt(this->socket, SOL_SOCKET, SO_RCVTIMEO, (char*) &timeout, sizeof(timeout)) < 0)
+        return RECV_ERR;
+
     do {
         buf.resize(MAX_MSG_LEN, 0);
 
@@ -213,6 +220,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt,
 
         // Trunca para quantos bytes foram recebidos
         buf.resize(msg_len);
+
 #ifdef DEBUG2
         printf("%ld\n", msg_len);
         for (auto i : buf)
@@ -222,10 +230,12 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt,
 #endif
 
         // Se o pacote for valido então retona Ok
-        if (is_valid_packet(this->addr, buf) &&
-            pkt->deserialize(buf) &&
-            is_espected_packet(pkt))
-            return OK;
+        if (!is_valid_packet(this->addr, buf))
+            continue;
+        int res =  process_buf(pkt, buf);
+        if (res == DONT_ACCEPT)
+            continue;
+        return res;
     // Continua o loop apenas se não tiver dado timeout ou
     // intervalo de timeout <= 0, ou seja continua para sempre.
     } while (interval <= 0 || timestamp() - comeco <= interval);
@@ -261,25 +271,26 @@ int connection_t::send_packet(uint8_t tipo, vector<uint8_t> &msg) {
     return OK;
 }
 
-// Envia um pacote e espera por uma resposta. O pacote de resposta deve ser aceito
-// pela função is_espected_packet, passada como parametro para a função.
-//      is_espected_packet: Retorna true se o packet é esperado
-//                          Retorna falso c.c.
+// Envia um pacote e espera por uma resposta. O pacote recebido é processado
+// pela função process_buf, onde ela decide quais ações tomar com o buffer
+// que foi recebido. É garantido que o buffer vai ter o marcador de inicio
+// do protocolo.
+// Atualiza seq da connection apenas se retorno de process_buf for OK
 // Faz retransmissão de dados se tiver timeout, configurar PACKET_TIMEOUT e
 // PACKET_RESTRANSMISSION.
 // Retorna MSG_TO_BIG se menssagem for grande demais.
 // Retorna SEND_ERR em caso de erro ao fazer send.
-// Retorna TIMEOUT_ERR em caso de não recebimento de resposta.
-// Retorna OK c.c.
+// Retorna RECV_TIMEOUT em caso de não recebimento de resposta.
+// Retorna valor da função de parametro c.c.
 int connection_t::send_await_packet(
         uint8_t tipo, std::vector<uint8_t> &msg,
-        struct packet_t *r_pkt, function<bool(struct packet_t *)> is_espected_packet)
+        struct packet_t *r_pkt, function<int(struct packet_t *, vector<uint8_t> &)> process_buf)
 {
     if (msg.size() > 63)
         return MSG_TO_BIG;
 
     struct packet_t s_pkt;
-    int i;
+    int i, res = OK;
     s_pkt.tam = (uint8_t)(msg.size());
     // Coloca sequência do pacote a ser enviado
     s_pkt.seq = this->seq;
@@ -301,18 +312,22 @@ int connection_t::send_await_packet(
         printf("[DEBUG]: "); print_packet(&s_pkt);
 #endif
         
-        // Tenta receber packet com timeout definido. E sai do loop de
-        // der certo enviar.
-        if (this->recv_packet(interval, r_pkt, is_espected_packet) == OK)
-            break;
+        // Tenta receber packet com timeout definido. Se receber timeout
+        res = this->recv_packet(interval, r_pkt, process_buf);
+        if (res == RECV_TIMEOUT)
+            continue;
+        if (res == RECV_ERR)
+            return RECV_ERR;
+        break;
     }
     // Se alcançou o maximo de retransmissões
     if (i == PACKET_RETRASMISSION_ROUNDS)
-        return TIMEOUT_ERR;
+        return RECV_TIMEOUT;
 
-    // Atualiza sequência
-    seq = (seq + 1) % (1<<SEQ_SIZE);
-    return OK;
+    // Atualiza sequência apenas se retorno de process_buf for OK
+    if (res == OK)
+        this->seq = (this->seq + 1) % (1<<SEQ_SIZE);
+    return res;
 }
 
 // ===================== Connection =====================

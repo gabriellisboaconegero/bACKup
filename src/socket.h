@@ -38,8 +38,8 @@
 #define MSG_TO_BIG      -1
 #define SEND_ERR        -2
 #define RECV_ERR        -3
-#define TIMEOUT_ERR     -4
-#define RECV_TIMEOUT    -5
+#define RECV_TIMEOUT    -4
+#define DONT_ACCEPT     -5
 #define OK               1
 
 // Códigos do protocolo
@@ -94,13 +94,16 @@ struct connection_t {
     // Retorn true c.c.
     bool connect(const char *);
 
-    // Recebe um pacote esperando por determinado intervalo. Coloca o pacote lido em pkt
-    // se ele for de acordo com o protocolo. Se intervalo for 0 fica esperando sem timeout.
+    // Espera por um pacote. O pacote recebido é processado
+    // pela função process_buf, onde ela decide quais ações tomar com o buffer
+    // que foi recebido. É garantido que o buffer vai ter o marcador de inicio
+    // do protocolo.
+    // Intervalo ser zero é sem timeout.
     // Retorna RECV_TIMEOUT se der timeout
     // Retorna RECV_ERR se der erro
     // Retorna OK c.c
     int recv_packet(int interval, struct packet_t *pkt,
-                          std::function<bool(struct packet_t *)> is_espected_packet);
+                    std::function<int(struct packet_t *, std::vector<uint8_t> &)>);
 
     // Envia um packet.
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
@@ -108,19 +111,19 @@ struct connection_t {
     // Retorna OK c.c
     int send_packet(uint8_t, std::vector<uint8_t> &);
 
-    // Envia um pacote e espera por uma resposta. O pacote de resposta deve ser aceito
-    // pela função is_espected_packet, passada como parametro para a função.
-    //      is_espected_packet: Retorna true se o packet é esperado
-    //                          Retorna falso c.c.
+    // Envia um pacote e espera por uma resposta. O pacote recebido é processado
+    // pela função process_buf, onde ela decide quais ações tomar com o buffer
+    // que foi recebido. É garantido que o buffer vai ter o marcador de inicio
+    // do protocolo.
     // Faz retransmissão de dados se tiver timeout, configurar PACKET_TIMEOUT e
     // PACKET_RESTRANSMISSION.
     // Retorna MSG_TO_BIG se menssagem for grande demais.
     // Retorna SEND_ERR em caso de erro ao fazer send.
-    // Retorna TIMEOUT_ERR em caso de não recebimento de resposta.
-    // Retorna OK c.c.
+    // Retorna RECV_TIMEOUT em caso de não recebimento de resposta.
+    // Retorna valor da função de parametro c.c.
     int send_await_packet(uint8_t,
                           std::vector<uint8_t> &,
                           struct packet_t *,
-                          std::function<bool(struct packet_t *)>);
+                          std::function<int(struct packet_t *, std::vector<uint8_t> &)>);
 };
 // =========== Structs ===========
