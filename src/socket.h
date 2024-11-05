@@ -27,6 +27,9 @@
 // Tamnho maximo de respo
 #define MAX_MSG_LEN 100
 
+// Polinômio gerador usando no crc8
+#define GENERATOR_POLY 0x1D
+
 // Configuração de retransmissão
 #define PACKET_TIMEOUT_INTERVAL         250 // Tempo até retransmissão (em milisegundos)
 #define PACKET_RETRASMISSION_ROUNDS     10    // Quantidade de retransmissões máximas

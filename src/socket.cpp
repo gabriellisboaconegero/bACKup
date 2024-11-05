@@ -40,7 +40,8 @@ int cria_raw_socket(const char* nome_interface_rede) {
 }
 
 // Gera o crc 8 bits de uma certa sequência de bytes.
-uint8_t gen_crc8(vector<uint8_t>::iterator buf_begin,
+// vide https://www.sunshine2k.de/articles/coding/crc/understanding_crc.html 
+uint8_t crc8(vector<uint8_t>::iterator buf_begin,
                  vector<uint8_t>::iterator buf_end)
 {
     uint8_t crc = 0;
@@ -48,7 +49,7 @@ uint8_t gen_crc8(vector<uint8_t>::iterator buf_begin,
         crc ^= *buf_begin;
         for (int j = 0; j < 8; j++){
             if (crc & 0x80)
-                crc = (crc << 1) ^ 0x07;
+                crc = (crc << 1) ^ GENERATOR_POLY;
             else
                 crc <<= 1;
         }
@@ -70,11 +71,17 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     if (int(buf.size()) < PACKET_MIN_SIZE)
         return false;
 
-    // Verifica crc 8 bits dos campos tam, seq, tipo e dados.
-    // Considera apenas entre marcador de inicio e crc, esses campos não
-    // entram na conta de crc.
-    // if(buf.back() == gen_crc8(buf.begin()+1, buf.begin()+buf.size()-1))
-    //     return false;
+    // Verifica crc 8 bits dos campos tam, seq, tipo, dados e crc.
+    // Para fazer a verificação basta verificar se crc8 aplicado nos
+    // campos tam, tipo, seq, dados e crc são 0.
+    // Vide https://www.sunshine2k.de/articles/coding/crc/understanding_crc.html,
+    // na seção 2.1 CRC Verification.
+    if(crc8(buf.begin()+1, buf.begin()+buf.size()) != 0){
+#ifdef DEBUG
+        printf("[ERRO]: CRC incorreto\n");
+#endif
+        return false;
+    }
 
     // Pega tamanho
     tam = buf[1] >> 2;
@@ -119,7 +126,8 @@ vector<uint8_t> packet_t::serialize() {
     copy(dados.begin(), dados.end(), buf.begin()+3);
     // gera crc 8 bits
     
-    buf[buf.size() - 1] = gen_crc8(buf.begin()+1, buf.begin()+buf.size()-1);
+    // Crc gerado utiliza campos tam, tipo, seq e dados.
+    buf[buf.size() - 1] = crc8(buf.begin()+1, buf.begin()+buf.size()-1);
 
     return buf;
 }
