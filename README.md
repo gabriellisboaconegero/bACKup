@@ -65,9 +65,11 @@ O docker vai continuar rodando até que vocẽ pare ele. Rodando
 docker compose down
 ```
 ## Loopback/lo (local)
-Essa opção deixa de funcionar quando temos ambos **cliente** e **servidor** enviando e
+__Essa opção deixa de funcionar quando temos ambos **cliente** e **servidor** enviando e
 recebendo pacotes. Infelizmente ainda não achei a causa do problema, apenas que muitas
-coisas esquisitas ocorrem.
+coisas esquisitas ocorrem__.
+
+Voltou a funcionar, era só eu que programei tudo errado mesmo. heehhehehehehehe.
 
 ### Teste usando interface `loopback`
 Para evitar de ouvir duas vezes o pacote, fazemos uso da API `recvfrom` em
