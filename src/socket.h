@@ -94,11 +94,13 @@ struct connection_t {
     // Retorn true c.c.
     bool connect(const char *);
 
-    // Recebe o pacote, fica buscando até achar menssagem do protocolo
-    // Retorna RECV_ERR em caso de erro ao fazer recv
-    // Retorna Ok c.c.
-    int recv_packet(struct packet_t *pkt,
-                    std::function<bool(struct packet_t *)>);
+    // Recebe um pacote esperando por determinado intervalo. Coloca o pacote lido em pkt
+    // se ele for de acordo com o protocolo. Se intervalo for 0 fica esperando sem timeout.
+    // Retorna RECV_TIMEOUT se der timeout
+    // Retorna RECV_ERR se der erro
+    // Retorna OK c.c
+    int recv_packet(int interval, struct packet_t *pkt,
+                          std::function<bool(struct packet_t *)> is_espected_packet);
 
     // Envia um packet.
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes

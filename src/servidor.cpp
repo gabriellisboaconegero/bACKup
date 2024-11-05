@@ -12,7 +12,7 @@ void servidor(string interface) {
     }
 
     while(1) {
-        if (conn.recv_packet(&pkt, [](struct packet_t *pkt){
+        if (conn.recv_packet(0, &pkt, [](struct packet_t *pkt){
             return pkt->tipo == PKT_RESTAURA ||
             pkt->tipo == PKT_BACKUP ||
             pkt->tipo == PKT_VERIFICA;

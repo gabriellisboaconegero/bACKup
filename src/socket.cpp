@@ -84,19 +84,19 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     }
 
     // Pega tamanho
-    tam = buf[1] >> 2;
+    this->tam = buf[1] >> 2;
     // Pega sequencia
-    seq = ((buf[1] & 0x03) << 3) | (buf[2] >> 5);
+    this->seq = ((buf[1] & 0x03) << 3) | (buf[2] >> 5);
     // Pega tipo
-    tipo = buf[2] & 0x1f;
+    this->tipo = buf[2] & 0x1f;
 
     // Verifica se dados estão no tamanho correto
-    if (int(buf.size()) - PACKET_MIN_SIZE != int(tam))
+    if (int(buf.size()) - PACKET_MIN_SIZE != int(this->tam))
         return false;
 
     // Copia os dados da menssagem, que começam depois de mi, tam, seq e tipo e acabam antes de crc
-    dados.resize(tam, 0);
-    copy(buf.begin()+3, buf.begin()+3+tam, dados.begin());
+    this->dados.resize(tam, 0);
+    copy(buf.begin()+3, buf.begin()+3+this->tam, this->dados.begin());
 
     return true;
 }
@@ -107,23 +107,23 @@ vector<uint8_t> packet_t::serialize() {
     // buf[0] = 0bmmmmmmmm
     // buf[1] = 0bttttttss
     // buf[2] = 0bsssTTTTT
-    vector<uint8_t> buf(PACKET_MIN_SIZE+dados.size(), 0);
+    vector<uint8_t> buf(PACKET_MIN_SIZE+this->dados.size(), 0);
 
     // Marcador de inicio (m)
     buf[0] = PACKET_MI;
 
     // Tamanho (t)
-    buf[1] = tam << 2;
+    buf[1] = this->tam << 2;
 
     // Sequencia (s)
-    buf[1] |= (seq & 0x18) >> 3; // 00011000
-    buf[2]  = (seq & 0x07) << 5; // 00000111
+    buf[1] |= (this->seq & 0x18) >> 3; // 00011000
+    buf[2]  = (this->seq & 0x07) << 5; // 00000111
 
     // Tipo (T)
-    buf[2] |= tipo & 0x1f;       // 00011111
+    buf[2] |= this->tipo & 0x1f;       // 00011111
 
     // Coloca dados no buffer, dado offset de 3 bytes
-    copy(dados.begin(), dados.end(), buf.begin()+3);
+    copy(this->dados.begin(), this->dados.end(), buf.begin()+3);
     // gera crc 8 bits
     
     // Crc gerado utiliza campos tam, tipo, seq e dados.
@@ -166,9 +166,9 @@ bool is_valid_packet(struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
 // Retorna false se não foi possivel criar socket.
 // Retorn true c.c.
 bool connection_t::connect(const char *interface) {
-    socket = cria_raw_socket(interface);
-    seq = 0;
-    if (socket < 0)
+    this->socket = cria_raw_socket(interface);
+    this->seq = 0;
+    if (this->socket < 0)
         return false;
     return true;
 }
@@ -184,10 +184,9 @@ long long timestamp() {
 // Retorna RECV_TIMEOUT se der timeout
 // Retorna RECV_ERR se der erro
 // Retorna OK c.c
-int recv_with_timeout(
-        struct connection_t *conn, int interval,
-        struct packet_t *pkt, function<bool(struct packet_t *)> is_espected_packet) {
-    socklen_t addr_len = sizeof(conn->addr);
+int connection_t::recv_packet(int interval, struct packet_t *pkt,
+        std::function<bool(struct packet_t *)> is_espected_packet) {
+    socklen_t addr_len = sizeof(this->addr);
     long long comeco = timestamp();
     vector<uint8_t> buf;
     struct timeval timeout;
@@ -195,11 +194,11 @@ int recv_with_timeout(
     timeout.tv_usec = (interval % 1000) * 1000;
 
     // Coloca timeout no socket, ver https://wiki.inf.ufpr.br/todt/doku.php?id=timeouts
-    setsockopt(conn->socket, SOL_SOCKET, SO_RCVTIMEO, (char*) &timeout, sizeof(timeout));
+    setsockopt(this->socket, SOL_SOCKET, SO_RCVTIMEO, (char*) &timeout, sizeof(timeout));
     do {
         buf.resize(MAX_MSG_LEN, 0);
 
-        auto msg_len = recvfrom(conn->socket, buf.data(), buf.size(), 0, (struct sockaddr*)&(conn->addr), &addr_len);
+        auto msg_len = recvfrom(this->socket, buf.data(), buf.size(), 0, (struct sockaddr*)&(this->addr), &addr_len);
         // Se tiver dado timeout continua o loop.
         // Se tiver dado algum erro, retorna que deu erro.
         if (msg_len < 0) {
@@ -223,7 +222,7 @@ int recv_with_timeout(
 #endif
 
         // Se o pacote for valido então retona Ok
-        if (is_valid_packet(conn->addr, buf) &&
+        if (is_valid_packet(this->addr, buf) &&
             pkt->deserialize(buf) &&
             is_espected_packet(pkt))
             return OK;
@@ -232,16 +231,6 @@ int recv_with_timeout(
     } while (interval <= 0 || timestamp() - comeco <= interval);
 
     return RECV_TIMEOUT;
-}
-
-// Recebe o pacote, fica buscando até achar menssagem do protocolo
-// Utiliza a função recv_with_timeout com um timeout de 0, retirando o timeout
-// e ficando em espera pelo pacote.
-// Retorna RECV_ERR de der erro
-// Retorna OK c.c
-int connection_t::recv_packet(struct packet_t *pkt,
-                              function<bool(struct packet_t *)> is_espected_packet) {
-    return recv_with_timeout(this, 0, pkt, is_espected_packet);
 }
 
 // Envia um packet.
@@ -255,14 +244,16 @@ int connection_t::send_packet(uint8_t tipo, vector<uint8_t> &msg) {
     struct packet_t pkt;
     pkt.tam = (uint8_t)(msg.size());
     // Coloca sequência do pacote a ser enviado
-    pkt.seq = seq;
+    pkt.seq = this->seq;
     pkt.tipo = tipo;
     pkt.dados.resize(msg.size());
     copy(msg.begin(), msg.end(), pkt.dados.begin());
     vector<uint8_t> buf = pkt.serialize();
+    // DEBUG: Altera um bit para verificar se CRC funciona
+    // buf[3] ^= 0x80;
 
     // Faz o send
-    if (send(socket, buf.data(), buf.size(), 0) < 0)
+    if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
 
     // Atualiza sequência apenas se tudo der certo
@@ -291,7 +282,7 @@ int connection_t::send_await_packet(
     int i;
     s_pkt.tam = (uint8_t)(msg.size());
     // Coloca sequência do pacote a ser enviado
-    s_pkt.seq = seq;
+    s_pkt.seq = this->seq;
     s_pkt.tipo = tipo;
     s_pkt.dados.resize(msg.size());
     copy(msg.begin(), msg.end(), s_pkt.dados.begin());
@@ -303,14 +294,16 @@ int connection_t::send_await_packet(
         printf("[DEBUG]: Tentativa (%d\\%d)\n", i+1, PACKET_RETRASMISSION_ROUNDS);
 #endif
         // Faz o send
-        if (send(socket, s_buf.data(), s_buf.size(), 0) < 0)
+        if (send(this->socket, s_buf.data(), s_buf.size(), 0) < 0)
             return SEND_ERR;
 #ifdef DEBUG
         printf("[DEBUG]: Menssagem enviada com sucesso\n");
         printf("[DEBUG]: "); print_packet(&s_pkt);
 #endif
         
-        if (recv_with_timeout(this, interval, r_pkt, is_espected_packet) >= 0)
+        // Tenta receber packet com timeout definido. E sai do loop de
+        // der certo enviar.
+        if (this->recv_packet(interval, r_pkt, is_espected_packet) == OK)
             break;
     }
     // Se alcançou o maximo de retransmissões
