@@ -39,7 +39,8 @@ int idle_state(struct connection_t *conn, struct packet_t *pkt) {
         umsg.resize(msg.size());
         copy(msg.begin(), msg.end(), umsg.begin());
         // Calcula checksum e coloca em umsg
-        conn->send_packet(PKT_OK_CKSUM, umsg);
+        if (conn->send_packet(PKT_OK_CKSUM, umsg) < 0)
+            return ERR;
     } else if (res == PKT_BACKUP) {
         // Verifica se arquivo ja existe, se existir manda erro
         // if (!file_exist(file_name)) {
@@ -48,8 +49,12 @@ int idle_state(struct connection_t *conn, struct packet_t *pkt) {
         //  continue;
         // }
         // Muda estado para BKP_INIT e manda OK
+        msg += ": BACKUP";
+        umsg.resize(msg.size());
+        copy(msg.begin(), msg.end(), umsg.begin());
+        if(conn->send_packet(PKT_OK, umsg) < 0)
+            return ERR;
         new_state = BKP_INIT;
-        conn->send_packet(PKT_OK, umsg);
     } else if (res == PKT_RESTAURA) {
         // Verifica se arquivo existe e se usuário tem acesso
         // if (!file_exist(file_name) && !file_access(file_name)){
@@ -59,11 +64,13 @@ int idle_state(struct connection_t *conn, struct packet_t *pkt) {
         // }
         // Muda estado para RESTA_INIT e manda OK_TAM
         // Pega tamanho do arquivo e coloca em umsg
+        if (conn->send_packet(PKT_OK_TAM, umsg) < 0)
+            return ERR;
         new_state = RESTA_INIT;
-        conn->send_packet(PKT_OK_TAM, umsg);
     } else {
         // Pacote não reconhecido, envia NACK
-        conn->send_packet(PKT_NACK, umsg);
+        if (conn->send_packet(PKT_NACK, umsg) < 0)
+            return ERR;
     }
 
     return new_state;
@@ -93,19 +100,22 @@ int bkp_init_state(struct connection_t *conn, struct packet_t *pkt) {
         //  continue;
         // }
         // Cria arquivo e manda OK, muda para BKP_DATA
+        if (conn->send_packet(PKT_OK, umsg) < 0)
+            return ERR;
         new_state = BKP_DATA;
-        conn->send_packet(PKT_OK, umsg);
     } else if (res == PKT_VERIFICA ||
             res == PKT_RESTAURA ||
             res == PKT_BACKUP)
     {
         // Se for alguma das funções principais, voltar para IDLE com erro
         // Monta menssagem de erro de OPERATION_INTERRUPT e coloca em umsg
+        if (conn->send_packet(PKT_ERRO, umsg) < 0)
+            return ERR;
         new_state = IDLE;
-        conn->send_packet(PKT_ERRO, umsg);
     } else {
         // Não reconheceu pacote, enviar NACK
-        conn->send_packet(PKT_NACK, umsg);
+        if (conn->send_packet(PKT_NACK, umsg) < 0)
+            return ERR;
     }
 
     return new_state;
@@ -127,22 +137,27 @@ int bkp_data_state(struct connection_t *conn, struct packet_t *pkt) {
     }
 
     if (res == PKT_DADOS) {
-        // Recebe dados e manda ACK
-        conn->send_packet(PKT_ACK, umsg);
+        // Recebe dados e manda ACK, coloca os dados no arquivo
+        if (conn->send_packet(PKT_ACK, umsg) < 0)
+            return ERR;
     } else if (res == PKT_FIM_TX_DADOS) {
         // Finaliza escritura de arquivo e troca para IDLE
-        conn->send_packet(PKT_ACK, umsg);
+        if (conn->send_packet(PKT_ACK, umsg) < 0)
+            return ERR;
+        new_state = IDLE;
     } else if (res == PKT_VERIFICA ||
             res == PKT_RESTAURA ||
             res == PKT_BACKUP)
     {
         // Se for alguma das funções principais, voltar para IDLE com erro
         // Monta menssagem de erro de OPERATION_INTERRUPT e coloca em umsg
+        if (conn->send_packet(PKT_ERRO, umsg) < 0)
+            return ERR;
         new_state = IDLE;
-        conn->send_packet(PKT_ERRO, umsg);
     } else {
         // Não reconheceu pacote, enviar NACK
-        conn->send_packet(PKT_NACK, umsg);
+        if (conn->send_packet(PKT_NACK, umsg) < 0)
+            return ERR;
     }
 
     return new_state;
@@ -167,18 +182,39 @@ void servidor(string interface) {
                 printf("[STATE]: IDLE\n");
 #endif
                 state = idle_state(&conn, &pkt);
+                if (pkt.tipo == PKT_BACKUP || pkt.tipo == PKT_VERIFICA || pkt.tipo == PKT_RESTAURA) {
+                    printf("[MENSAGEM RECEBIDA]: "); print_packet(&pkt);
+                } else if (pkt.tipo == PKT_ERRO) {
+                    printf("[CODIGO ERRO]: Um erro foi detectado no servidor\n");
+                } else {
+                    printf("[ERRO]: Tipo de menssagem não esperada\n"); print_packet(&pkt);
+                }
                 break;
             case BKP_INIT:
 #ifdef DEBUG
                 printf("[STATE]: BKP_INIT\n");
 #endif
                 state = bkp_init_state(&conn, &pkt);
+                if (pkt.tipo == PKT_TAM) {
+                    printf("[MENSAGEM RECEBIDA]: "); print_packet(&pkt);
+                } else if (pkt.tipo == PKT_ERRO) {
+                    printf("[CODIGO ERRO]: Um erro foi detectado no servidor\n");
+                } else {
+                    printf("[ERRO]: Tipo de menssagem não esperada\n"); print_packet(&pkt);
+                }
                 break;
             case BKP_DATA:
 #ifdef DEBUG
                 printf("[STATE]: BKP_DATA\n");
 #endif
                 state = bkp_data_state(&conn, &pkt);
+                if (pkt.tipo == PKT_DADOS || pkt.tipo == PKT_FIM_TX_DADOS) {
+                    printf("[MENSAGEM RECEBIDA]: "); print_packet(&pkt);
+                } else if (pkt.tipo == PKT_ERRO) {
+                    printf("[CODIGO ERRO]: Um erro foi detectado no servidor\n");
+                } else {
+                    printf("[ERRO]: Tipo de menssagem não esperada\n"); print_packet(&pkt);
+                }
                 break;
             default:
                 printf("[ERRO]: ESTADO(%d) Não deveria chegar aqui\n", state);

@@ -17,7 +17,7 @@ using namespace std;
 int idle_state(struct connection_t *conn, struct packet_t *pkt) {
     vector<uint8_t> umsg;
     string msg = "[IDLE]: MSG cliente";
-    int res, new_state = IDLE;
+    int new_state = IDLE;
     umsg.resize(msg.size());
     copy(msg.begin(), msg.end(), umsg.begin());
     int opt;
@@ -27,11 +27,16 @@ int idle_state(struct connection_t *conn, struct packet_t *pkt) {
         PKT_BACKUP,
         PKT_RESTAURA,
     };
-    printf("Escolha uma das opções:\n\t0 - VERIFICA\n\t1 - BACKUP\n\t2 - RESTAURA\n\toutro para sair\n>> ");
+    printf("Escolha uma das opções:\n\t0 - VERIFICA\n\t1 - BACKUP\n\t2 - RESTAURA\n\t3 - testa recv\n\toutro para sair\n>> ");
     cin >> opt;
-    if (opt > 3 && opt < 0)
+    if (opt > 4 && opt < 0)
         exit(1);
 
+    if (opt == 3){
+        conn->recv_packet(1000, pkt);
+        print_packet(pkt);
+        return new_state;
+    }
     if (opts[opt] == PKT_VERIFICA) {
         // Pede o nome de um arquivo para recuperar e coloca em umsg
         if (conn->send_packet(PKT_VERIFICA, umsg) < 0)
@@ -94,12 +99,230 @@ int verifica_state(struct connection_t *conn, struct packet_t *pkt) {
     return IDLE;
 }
 
+int bkp_init_state(struct connection_t *conn, struct packet_t *pkt) {
+    vector<uint8_t> umsg;
+    string msg = "[BKP_INIT]: MSG cliente";
+    int res, new_state = BKP_INIT, round, interval = PACKET_TIMEOUT_INTERVAL;
+    struct packet_t r_pkt;
+
+    // Copia ultima menssagem para umsg, para ser enviada em casa de timeout
+    umsg.resize(conn->last_pkt.dados.size());
+    copy(conn->last_pkt.dados.begin(), conn->last_pkt.dados.end(), umsg.begin());
+
+    // Tenta fazer o timeout, somente tem timeout em NACKS
+    // Qualquer outra menssagem vai sair.
+    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
+#ifdef DEBUG
+        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
+#endif
+        res = conn->recv_packet(interval, pkt);
+        // Se deu algum erro, não quer dizer que packet é do
+        // tipo PKT_ERRO ou PKT_NACK
+        if (res < 0) {
+            printf("[ERRO]: %s\n", strerror(errno));
+            return ERR;
+        }
+        if (res != PKT_TIMEOUT && res != PKT_NACK)
+            break;
+
+        if (conn->send_packet(conn->last_pkt.tipo, umsg) < 0)
+            return ERR;
+
+#ifdef DEBUG
+        printf("[DEBUG]: Menssagem enviada com sucesso\n");
+        printf("[DEBUG]: "); print_packet(&conn->last_pkt);
+#endif
+    }
+    // Se alcançou o maximo de retransmissões, marca que teve timeout
+    if (round == PACKET_RETRASMISSION_ROUNDS) {
+        res = PKT_TIMEOUT;
+        pkt->tipo = PKT_TIMEOUT;
+    }
+
+    if (res == PKT_OK){
+        // Calcula tamanho do arquivo corretamente e coloca em umsg
+        umsg.resize(msg.size());
+        copy(msg.begin(), msg.end(), umsg.begin());
+        if (conn->send_packet(PKT_TAM, umsg) < 0)
+            return ERR;
+        new_state = BKP_TAM;
+    } else {
+        // Qualquer outra resposta volta para IDLE sem enviar nada
+        new_state = IDLE;
+    }
+    return new_state;
+}
+
+int bkp_tam_state(struct connection_t *conn, struct packet_t *pkt) {
+    vector<uint8_t> umsg;
+    string msg = "[BKP_TAM]: MSG cliente";
+    int res, new_state = BKP_TAM, round, interval = PACKET_TIMEOUT_INTERVAL;
+    struct packet_t r_pkt;
+
+    // Copia ultima menssagem para umsg, para ser enviada em casa de timeout
+    umsg.resize(conn->last_pkt.dados.size());
+    copy(conn->last_pkt.dados.begin(), conn->last_pkt.dados.end(), umsg.begin());
+
+    // Tenta fazer o timeout, somente tem timeout em NACKS
+    // Qualquer outra menssagem vai sair.
+    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
+#ifdef DEBUG
+        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
+#endif
+        res = conn->recv_packet(interval, pkt);
+        // Se deu algum erro, não quer dizer que packet é do
+        // tipo PKT_ERRO ou PKT_NACK
+        if (res < 0) {
+            printf("[ERRO]: %s\n", strerror(errno));
+            return ERR;
+        }
+        if (res != PKT_TIMEOUT && res != PKT_NACK)
+            break;
+
+        if (conn->send_packet(conn->last_pkt.tipo, umsg) < 0)
+            return ERR;
+
+#ifdef DEBUG
+        printf("[DEBUG]: Menssagem enviada com sucesso\n");
+        printf("[DEBUG]: "); print_packet(&conn->last_pkt);
+#endif
+    }
+    // Se alcançou o maximo de retransmissões, marca que teve timeout
+    if (round == PACKET_RETRASMISSION_ROUNDS) {
+        res = PKT_TIMEOUT;
+        pkt->tipo = PKT_TIMEOUT;
+    }
+
+    if (res == PKT_OK){
+        // Pega primeira parte dos dados do arquivo e envia
+        msg += ": DADOS 1/2";
+        umsg.resize(msg.size());
+        copy(msg.begin(), msg.end(), umsg.begin());
+        if (conn->send_packet(PKT_DADOS, umsg) < 0)
+            return ERR;
+        new_state = BKP_DATA;
+    } else {
+        // Qualquer outra resposta volta para IDLE sem enviar nada
+        new_state = IDLE;
+    }
+    return new_state;
+}
+
+int bkp_data_state(struct connection_t *conn, struct packet_t *pkt, int num) {
+    vector<uint8_t> umsg;
+    string msg = "[BKP_DATA]: MSG cliente";
+    int res, new_state = BKP_DATA, round, interval = PACKET_TIMEOUT_INTERVAL;
+    struct packet_t r_pkt;
+
+    // Copia ultima menssagem para umsg, para ser enviada em casa de timeout
+    umsg.resize(conn->last_pkt.dados.size());
+    copy(conn->last_pkt.dados.begin(), conn->last_pkt.dados.end(), umsg.begin());
+
+    // Tenta fazer o timeout, somente tem timeout em NACKS
+    // Qualquer outra menssagem vai sair.
+    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
+#ifdef DEBUG
+        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
+#endif
+        res = conn->recv_packet(interval, pkt);
+        // Se deu algum erro, não quer dizer que packet é do
+        // tipo PKT_ERRO ou PKT_NACK
+        if (res < 0) {
+            printf("[ERRO]: %s\n", strerror(errno));
+            return ERR;
+        }
+        if (res != PKT_TIMEOUT && res != PKT_NACK)
+            break;
+
+        if (conn->send_packet(conn->last_pkt.tipo, umsg) < 0)
+            return ERR;
+
+#ifdef DEBUG
+        printf("[DEBUG]: Menssagem enviada com sucesso\n");
+        printf("[DEBUG]: "); print_packet(&conn->last_pkt);
+#endif
+    }
+    // Se alcançou o maximo de retransmissões, marca que teve timeout
+    if (round == PACKET_RETRASMISSION_ROUNDS) {
+        res = PKT_TIMEOUT;
+        pkt->tipo = PKT_TIMEOUT;
+    }
+
+    if (res == PKT_ACK){
+        // Continua pegando os proximos pedaços da menssagem e enviando.
+        // Se for o ultimo pedaço envia PKT_FIM_TX_DADOS
+        if (num) {
+            msg += ": DADOS 2/2";
+            umsg.resize(msg.size());
+            copy(msg.begin(), msg.end(), umsg.begin());
+            if (conn->send_packet(PKT_DADOS, umsg) < 0)
+                return ERR;
+            new_state = BKP_DATA;
+        } else {
+            msg += ": FIM";
+            umsg.resize(msg.size());
+            copy(msg.begin(), msg.end(), umsg.begin());
+            if (conn->send_packet(PKT_FIM_TX_DADOS, umsg) < 0)
+                return ERR;
+            new_state = BKP_FIM;
+        }
+    } else {
+        // Qualquer outra resposta volta para IDLE sem enviar nada
+        new_state = IDLE;
+    }
+    return new_state;
+}
+
+int bkp_fim_state(struct connection_t *conn, struct packet_t *pkt) {
+    vector<uint8_t> umsg;
+    int res, round, interval = PACKET_TIMEOUT_INTERVAL;
+    struct packet_t r_pkt;
+
+    // Copia ultima menssagem para umsg, para ser enviada em casa de timeout
+    umsg.resize(conn->last_pkt.dados.size());
+    copy(conn->last_pkt.dados.begin(), conn->last_pkt.dados.end(), umsg.begin());
+
+    // Tenta fazer o timeout, somente tem timeout em NACKS
+    // Qualquer outra menssagem vai sair.
+    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
+#ifdef DEBUG
+        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
+#endif
+        res = conn->recv_packet(interval, pkt);
+        // Se deu algum erro, não quer dizer que packet é do
+        // tipo PKT_ERRO ou PKT_NACK
+        if (res < 0) {
+            printf("[ERRO]: %s\n", strerror(errno));
+            return ERR;
+        }
+        if (res != PKT_TIMEOUT && res != PKT_NACK)
+            break;
+
+        if (conn->send_packet(conn->last_pkt.tipo, umsg) < 0)
+            return ERR;
+
+#ifdef DEBUG
+        printf("[DEBUG]: Menssagem enviada com sucesso\n");
+        printf("[DEBUG]: "); print_packet(&conn->last_pkt);
+#endif
+    }
+    // Se alcançou o maximo de retransmissões, marca que teve timeout
+    if (round == PACKET_RETRASMISSION_ROUNDS) {
+        res = PKT_TIMEOUT;
+        pkt->tipo = PKT_TIMEOUT;
+    }
+
+    // Sempre volta para o IDLE
+    return IDLE;
+}
+
 void cliente(string interface) {
     struct connection_t conn;
     struct packet_t pkt;
     string msg;
     vector<uint8_t> umsg;
     int state = IDLE;
+    int num = 0;
 
     if (!conn.connect(interface.data())) {
         cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
@@ -114,6 +337,7 @@ void cliente(string interface) {
                 printf("[STATE]: IDLE\n");
 #endif
                 state = idle_state(&conn, &pkt);
+                num = 0;
                 break;
             case VERIFICA:
 #ifdef DEBUG
@@ -127,7 +351,68 @@ void cliente(string interface) {
                 } else if (pkt.tipo == PKT_ERRO) {
                     printf("[CODIGO ERRO]: Um erro foi detectado no servidor\n");
                 } else {
-                    printf("[ERRO]: Tipo de menssagem não esperada\n");
+                    printf("[ERRO]: Tipo de menssagem não esperada\n"); print_packet(&pkt);
+                }
+                break;
+            case BKP_INIT:
+#ifdef DEBUG
+                printf("[STATE]: BKP_INIT\n");
+#endif
+                state = bkp_init_state(&conn, &pkt);
+                if (pkt.tipo == PKT_TIMEOUT) {
+                    printf("[ERRO]: Timeout ao fazer verifica, voltando para idle\n");
+                } else if (pkt.tipo == PKT_OK) {
+                    printf("[MENSAGEM RECEBIDA]: "); print_packet(&pkt);
+                } else if (pkt.tipo == PKT_ERRO) {
+                    printf("[CODIGO ERRO]: Um erro foi detectado no servidor\n");
+                } else {
+                    printf("[ERRO]: Tipo de menssagem não esperada\n"); print_packet(&pkt);
+                }
+                break;
+            case BKP_TAM:
+#ifdef DEBUG
+                printf("[STATE]: BKP_TAM\n");
+#endif
+                state = bkp_tam_state(&conn, &pkt);
+                if (pkt.tipo == PKT_TIMEOUT) {
+                    printf("[ERRO]: Timeout ao fazer verifica, voltando para idle\n");
+                } else if (pkt.tipo == PKT_OK) {
+                    printf("[MENSAGEM RECEBIDA]: "); print_packet(&pkt);
+                } else if (pkt.tipo == PKT_ERRO) {
+                    printf("[CODIGO ERRO]: Um erro foi detectado no servidor\n");
+                } else {
+                    printf("[ERRO]: Tipo de menssagem não esperada\n"); print_packet(&pkt);
+                }
+                break;
+            case BKP_DATA:
+#ifdef DEBUG
+                printf("[STATE]: BKP_DATA\n");
+#endif
+                state = bkp_data_state(&conn, &pkt, num == 7 ? 0 : 1);
+                num++;
+                if (pkt.tipo == PKT_TIMEOUT) {
+                    printf("[ERRO]: Timeout ao fazer verifica, voltando para idle\n");
+                } else if (pkt.tipo == PKT_ACK) {
+                    printf("[MENSAGEM RECEBIDA]: "); print_packet(&pkt);
+                } else if (pkt.tipo == PKT_ERRO) {
+                    printf("[CODIGO ERRO]: Um erro foi detectado no servidor\n");
+                } else {
+                    printf("[ERRO]: Tipo de menssagem não esperada\n"); print_packet(&pkt);
+                }
+                break;
+            case BKP_FIM:
+#ifdef DEBUG
+                printf("[STATE]: BKP_FIM\n");
+#endif
+                state = bkp_tam_state(&conn, &pkt);
+                if (pkt.tipo == PKT_TIMEOUT) {
+                    printf("[ERRO]: Timeout ao fazer verifica, voltando para idle\n");
+                } else if (pkt.tipo == PKT_ACK) {
+                    printf("[MENSAGEM RECEBIDA]: "); print_packet(&pkt);
+                } else if (pkt.tipo == PKT_ERRO) {
+                    printf("[CODIGO ERRO]: Um erro foi detectado no servidor\n");
+                } else {
+                    printf("[ERRO]: Tipo de menssagem não esperada\n"); print_packet(&pkt);
                 }
                 break;
             default:

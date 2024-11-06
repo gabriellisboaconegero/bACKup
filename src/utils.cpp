@@ -21,9 +21,13 @@ const char *tipo_to_str(int tipo) {
 }
 
 void print_packet(struct packet_t *pkt) {
+    if (pkt == NULL){
+        printf("(NULL PKT)\n");
+        return;
+    }
     printf("(tipo: %s, seq: %d, size: %d): ",
                     tipo_to_str(pkt->tipo), pkt->seq, pkt->tam);
-    for (int i = 0; i < pkt->tam; i++)
+    for (int i = 0; i < int(pkt->dados.size()); i++)
         cout << pkt->dados[i];
     cout << endl;
 }
