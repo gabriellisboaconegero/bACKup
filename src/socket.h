@@ -55,6 +55,7 @@
 #define PKT_DADOS           0b10000
 #define PKT_FIM_TX_DADOS    0b10001
 #define PKT_ERRO            0b11111
+#define PKT_TIMEOUT         0b11110
 
 // Macros de tamanho de cada campo do protocolo em bits
 #define MI_SIZE             8
@@ -87,6 +88,7 @@ struct packet_t {
 struct connection_t {
     int socket;
     uint8_t seq;
+    struct packet_t last_pkt;
     struct sockaddr_ll addr;
 
     // Cria raw socket de conexão e inicializa struct.
@@ -101,7 +103,8 @@ struct connection_t {
     // Retorn o tipo do pacote c.c.
     int recv_packet(int interval, struct packet_t *pkt);
 
-    // Envia um packet.
+    // Envia um packet. Se pacote for enviado com sucesso copia
+    // para last_pkt.
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
     // Retorna SEND_ERR em caso de erro ao fazer send
     // Retorna OK c.c

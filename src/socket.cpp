@@ -233,7 +233,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
     // intervalo de timeout <= 0, ou seja continua para sempre.
     } while (interval <= 0 || timestamp() - comeco <= interval);
 
-    return RECV_TIMEOUT;
+    return PKT_TIMEOUT;
 }
 
 // Envia um packet.
@@ -258,6 +258,13 @@ int connection_t::send_packet(uint8_t tipo, vector<uint8_t> &msg) {
     // Faz o send
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
+
+    // Guarda ultimo pacote enviado
+    this->last_pkt.tipo = pkt.tipo;
+    this->last_pkt.tam = pkt.tam;
+    this->last_pkt.seq = pkt.seq;
+    this->last_pkt.dados.resize(pkt.tam);
+    copy(pkt.dados.begin(), pkt.dados.end(), this->last_pkt.dados.begin());
 
     // Atualiza sequência apenas se tudo der certo
     seq = (seq + 1) % (1<<SEQ_SIZE);
