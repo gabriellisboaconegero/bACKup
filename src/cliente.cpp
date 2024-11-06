@@ -1,63 +1,51 @@
 #include "socket.h"
 #include "utils.h"
-#define SEND_NACK 101
 using namespace std;
+
+// Define estados
+#define IDLE                0
+#define VERIFICA            1
+#define BKP_INIT            2
+#define BKP_TAM             3
+#define BKP_DATA            4
+#define BKP_FIM             5
+#define RESTA_INIT          6
+#define RESTA_TAM           7
+#define RESTA_DADOS         8
 
 void cliente(string interface) {
     struct connection_t conn;
     struct packet_t pkt;
+    string msg;
+    vector<uint8_t> umsg;
+    int state = IDLE, opt;
+
     if (!conn.connect(interface.data())) {
         cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
         cout << "[ERRO]: " << strerror(errno) << endl;
         exit(1);
     }
 
-    string msg;
-    vector<uint8_t> umsg;
     while(1) {
-        cout << "Escolha um aquivo para recuperar (q para sair): ";
-        cin >> msg;
-        if (msg == "q")
-            break;
-        umsg.resize(msg.size());
-        copy(msg.begin(), msg.end(), umsg.begin());
-        int res = conn.send_await_packet(PKT_RESTAURA, umsg, &pkt,
-            [](struct packet_t *pkt, vector<uint8_t> &buf) -> int {
-                // Se houver errro na desserialização do pacote
-                if (!pkt->deserialize(buf))
-                    return SEND_NACK;
+        switch (state) {
+            case IDLE:
+                // Apresenta opções de escolha. BACKUP, VERIFICA e RESTAURA
+                cout << "Escolha um aquivo para recuperar (q para sair): ";
+                cin >> msg;
+                if (msg == "q")
+                    break;
+                umsg.resize(msg.size());
+                copy(msg.begin(), msg.end(), umsg.begin());
+                opt = PKT_BACKUP;
+                if (opt == PKT_BACKUP) {
 
-                // Se for um nack continua mandando
-                if (pkt->tipo == PKT_NACK)
-                    return DONT_ACCEPT;
+                }
+                // else if (opt == PKT_VERIFICA) {
 
-                // Se pacote não for o esperad
-                if (pkt->tipo != PKT_OK_TAM &&
-                    pkt->tipo != PKT_NACK   &&
-                    pkt->tipo != PKT_ERRO)
-                    return SEND_NACK;
+                // } else {
 
-                return OK;
-            }
-        );
-
-        // Limpa umsg
-        umsg.clear();
-        umsg.resize(20, 0);
-
-        switch (res) {
-            case RECV_TIMEOUT:
-                printf("[ERRO]: TimeOut - Não foi possivel enviar o pacote\n");
+                // }
                 break;
-            case SEND_NACK:
-                printf("[ERRO]: Pacote com err\n");
-                break;
-            case OK:
-                printf("[MENSSAGEM RECEBIDA]: ");
-                print_packet(&pkt);
-                break;
-            default:
-                cout << "[ERROR]: " << strerror(errno) << endl;
         }
     }
     cout << "Saindo do cliente" << endl;

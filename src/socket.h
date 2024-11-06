@@ -94,16 +94,12 @@ struct connection_t {
     // Retorn true c.c.
     bool connect(const char *);
 
-    // Espera por um pacote. O pacote recebido é processado
-    // pela função process_buf, onde ela decide quais ações tomar com o buffer
-    // que foi recebido. É garantido que o buffer vai ter o marcador de inicio
-    // do protocolo.
-    // Intervalo ser zero é sem timeout.
-    // Retorna RECV_TIMEOUT se der timeout
-    // Retorna RECV_ERR se der erro
-    // Retorna OK c.c
-    int recv_packet(int interval, struct packet_t *pkt,
-                    std::function<int(struct packet_t *, std::vector<uint8_t> &)>);
+    // Espera por um pacote dado um certo intervalo. Se intervalo for 0
+    // então não existe timeout.
+    // Retorna RECV_ERR (-1) se houver algum erro durante execução.
+    // Retorna PKT_TIMEOUT se tiver ocorrido o timeout
+    // Retorn o tipo do pacote c.c.
+    int recv_packet(int interval, struct packet_t *pkt);
 
     // Envia um packet.
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
@@ -121,9 +117,9 @@ struct connection_t {
     // Retorna SEND_ERR em caso de erro ao fazer send.
     // Retorna RECV_TIMEOUT em caso de não recebimento de resposta.
     // Retorna valor da função de parametro c.c.
-    int send_await_packet(uint8_t,
-                          std::vector<uint8_t> &,
-                          struct packet_t *,
-                          std::function<int(struct packet_t *, std::vector<uint8_t> &)>);
+    // int send_await_packet(uint8_t,
+    //                       std::vector<uint8_t> &,
+    //                       struct packet_t *,
+    //                       std::function<int(struct packet_t *, std::vector<uint8_t> &)>);
 };
 // =========== Structs ===========
