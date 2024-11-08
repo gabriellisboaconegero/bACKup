@@ -289,6 +289,12 @@ void connection_t::send_ack() {
     this->send_packet(&pkt);
 }
 
+void connection_t::send_ok() {
+    vector<uint8_t> umsg(14, 0);
+    struct packet_t pkt = make_packet(PKT_OK, umsg);
+    this->send_packet(&pkt);
+}
+
 void connection_t::save_last_recv(struct packet_t *pkt) {
     // Guarda ultimo pacote enviado
     this->last_pkt_recv.tipo = pkt->tipo;

@@ -60,7 +60,9 @@
 #define PKT_TIMEOUT         0b11110
 #define PKT_UNKNOW          0b11101
 
-#define NO_FILE_ERRO        1
+#define NO_FILE_ERRO            1
+#define NO_FILE_ACCESS_ERRO     2
+#define NO_DISK_SPACE_ERRO      3
 
 // Macros de tamanho de cada campo do protocolo em bits
 #define MI_SIZE             8
@@ -124,6 +126,8 @@ struct connection_t {
     void send_ack();
 
     void send_nack();
+
+    void send_ok();
 
     void save_last_recv(struct packet_t *pkt);
 

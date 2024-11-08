@@ -169,11 +169,18 @@ bool get_file_name(vector<uint8_t> &name) {
 }
 
 vector<uint8_t> calculate_cksum() {
+    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
     return vector<uint8_t>(14, '$');
+}
+
+bool has_disc_space(struct packet_t *pkt) {
+    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
+    return true;
 }
 
 void verifica(struct connection_t *conn) {
     // Verifica se arquivo existe, senão manda erro e sai
+    printf("-------------------- VERIFICA --------------------\n");
     if (get_file_name(conn->last_pkt_recv.dados)) {
         conn->send_erro(NO_FILE_ERRO);
         return;
@@ -183,10 +190,83 @@ void verifica(struct connection_t *conn) {
     vector<uint8_t> umsg = calculate_cksum();
     struct packet_t pkt = conn->make_packet(PKT_OK_CKSUM, umsg);
     conn->send_packet(&pkt);
+    printf("-------------------- VERIFICA --------------------\n");
+}
+
+void backup3(struct connection_t *conn) {
+    struct packet_t pkt;
+    int res;
+    
+    while (1) {
+        res = conn->recv_packet(0, &pkt);
+        if (res < 0) {
+            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
+            return;
+        }
+        // Salava ultimo recebido
+        conn->save_last_recv(&pkt);
+        printf("[BACKUP3]: Menssagem recebida: "); print_packet(&pkt);
+        // Espera por dados, então manda ack
+        if (res == PKT_DADOS) {
+            conn->send_ack();
+        // FIm de transmissão
+        } else if (res == PKT_FIM_TX_DADOS) { 
+            printf("[BACKUP3]: Fim da recepção de dados\n");
+            conn->send_ack();
+            break;
+        // Qualquer coisa que não seja DADOS e FIM manda nack
+        } else {
+            conn->send_nack();
+        }
+    }
+}
+
+void backup2(struct connection_t *conn) {
+    struct packet_t pkt;
+    int res;
+
+    while(1) {
+        res = conn->recv_packet(0, &pkt);
+        if (res < 0) {
+            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
+            return;
+        }
+        // Salava ultimo recebido
+        conn->save_last_recv(&pkt);
+        printf("[BACKUP2]: Menssagem recebida: "); print_packet(&pkt);
+        // Espera receber TAM do cliente
+        if (res == PKT_TAM) {
+            break;
+        }
+        conn->send_nack();
+    }
+    
+    // Verifica se tem espaço ná maquina para armazenar arquivo
+    if (!has_disc_space(&conn->last_pkt_recv)) {
+        printf("[ERRO]: Sem espaço no disco para receber arquivo\n");
+        conn->send_erro(NO_DISK_SPACE_ERRO);
+    }
+
+    // Confirma recebimento do TAM
+    conn->send_ok();
+    backup3(conn);
 }
 
 void backup(struct connection_t *conn) {
-    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
+    struct packet_t pkt;
+
+    printf("-------------------- BACKUP --------------------\n");
+    // Se o arquivo ja existir verifica se tem acesso a ele.
+    if (get_file_name(conn->last_pkt_recv.dados)) {
+        conn->send_erro(NO_FILE_ACCESS_ERRO);
+        return;
+    }
+
+    // Confirma recebimento do nome do arquivo
+    conn->send_ok();
+
+    backup2(conn);
+    printf("-------------------- BACKUP --------------------\n");
 }
 
 void restaura(struct connection_t *conn) {
