@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 #include <sysexits.h>
-#include <functional>
+#include <algorithm>
 
 // =========== Constantes ===========
 // Marcador de Inicio
@@ -54,8 +54,13 @@
 #define PKT_TAM             0b01111
 #define PKT_DADOS           0b10000
 #define PKT_FIM_TX_DADOS    0b10001
+// Outros tipos de pacotes, apenas para controle. Não são enviados
+// na rede.
 #define PKT_ERRO            0b11111
 #define PKT_TIMEOUT         0b11110
+#define PKT_UNKNOW          0b11101
+
+#define NO_FILE_ERRO        1
 
 // Macros de tamanho de cada campo do protocolo em bits
 #define MI_SIZE             8
@@ -68,6 +73,7 @@
 #define PACKET_MAX_DADOS_SIZE   ((1<<TAM_SIZE)-1)
 #define PACKET_MAX_SIZE         (PACKET_MIN_SIZE + PACKET_MAX_DADOS_SIZE)
 // =========== Constantes ===========
+
 
 // =========== Structs ===========
 struct packet_t {
@@ -88,7 +94,8 @@ struct packet_t {
 struct connection_t {
     int socket;
     uint8_t seq;
-    struct packet_t last_pkt;
+    struct packet_t last_pkt_send;
+    struct packet_t last_pkt_recv;
     struct sockaddr_ll addr;
 
     // Cria raw socket de conexão e inicializa struct.
@@ -108,8 +115,21 @@ struct connection_t {
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
     // Retorna SEND_ERR em caso de erro ao fazer send
     // Retorna OK c.c
-    int send_packet(uint8_t, std::vector<uint8_t> &);
+    struct packet_t make_packet(int tipo, std::vector<uint8_t> &umsg);
 
+    int send_packet(struct packet_t *pkt);
+
+    void send_erro(uint8_t erro_id);
+
+    void send_ack();
+
+    void send_nack();
+
+    void save_last_recv(struct packet_t *pkt);
+
+    void save_last_send(struct packet_t *pkt);
+
+    void update_seq();
     // Envia um pacote e espera por uma resposta. O pacote recebido é processado
     // pela função process_buf, onde ela decide quais ações tomar com o buffer
     // que foi recebido. É garantido que o buffer vai ter o marcador de inicio

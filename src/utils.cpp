@@ -2,6 +2,13 @@
 #include "utils.h"
 using namespace std;
 
+const char *erro_to_str(int tipo) {
+    switch (tipo) {
+        case NO_FILE_ERRO: return "Arquivo inexistente"; break;
+    }
+    return "[ERRO]: Unreachable";
+}
+
 const char *tipo_to_str(int tipo) {
     switch (tipo) {
         case PKT_ACK: return "ACK"; break;

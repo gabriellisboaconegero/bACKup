@@ -227,7 +227,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         if (!is_valid_packet(this->addr, buf))
             continue;
         if (!pkt->deserialize(buf))
-            return PKT_NACK;
+            return PKT_UNKNOW;
         return pkt->tipo;
     // Continua o loop apenas se não tiver dado timeout ou
     // intervalo de timeout <= 0, ou seja continua para sempre.
@@ -240,18 +240,8 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
 // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
 // Retorna SEND_ERR em caso de erro ao fazer send
 // Retorna OK c.c
-int connection_t::send_packet(uint8_t tipo, vector<uint8_t> &msg) {
-    if (msg.size() > 63)
-        return MSG_TO_BIG;
-
-    struct packet_t pkt;
-    pkt.tam = (uint8_t)(msg.size());
-    // Coloca sequência do pacote a ser enviado
-    pkt.seq = this->seq;
-    pkt.tipo = tipo;
-    pkt.dados.resize(msg.size());
-    copy(msg.begin(), msg.end(), pkt.dados.begin());
-    vector<uint8_t> buf = pkt.serialize();
+int connection_t::send_packet(struct packet_t *pkt) {
+    vector<uint8_t> buf = pkt->serialize();
     // DEBUG: Altera um bit para verificar se CRC funciona
     // buf[3] ^= 0x80;
 
@@ -259,16 +249,67 @@ int connection_t::send_packet(uint8_t tipo, vector<uint8_t> &msg) {
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
 
-    // Guarda ultimo pacote enviado
-    this->last_pkt.tipo = pkt.tipo;
-    this->last_pkt.tam = pkt.tam;
-    this->last_pkt.seq = pkt.seq;
-    this->last_pkt.dados.resize(pkt.tam);
-    copy(pkt.dados.begin(), pkt.dados.end(), this->last_pkt.dados.begin());
-
-    // Atualiza sequência apenas se tudo der certo
-    seq = (seq + 1) % (1<<SEQ_SIZE);
     return OK;
+}
+
+struct packet_t connection_t::make_packet(int tipo, vector<uint8_t> &umsg) {
+    struct packet_t pkt;
+    // Trunca menssagem, problema do usuário se ele mandar
+    // dados muito grande.
+    if (umsg.size() > 63)
+        pkt.dados.resize(63);
+    else
+        pkt.dados.resize(umsg.size());
+
+    pkt.tam = (uint8_t)(umsg.size());
+    // Coloca sequência do pacote a ser enviado
+    pkt.seq = this->seq;
+    pkt.tipo = tipo;
+    copy_n(umsg.begin(), pkt.dados.size(), pkt.dados.begin());
+
+    return pkt;
+}
+
+void connection_t::send_erro(uint8_t erro_id) {
+    vector<uint8_t> umsg(14, 0);
+    umsg[0] = erro_id;
+    struct packet_t pkt = make_packet(PKT_ERRO, umsg);
+    this->send_packet(&pkt);
+}
+
+void connection_t::send_nack() {
+    vector<uint8_t> umsg(14, 0);
+    struct packet_t pkt = make_packet(PKT_NACK, umsg);
+    this->send_packet(&pkt);
+}
+
+void connection_t::send_ack() {
+    vector<uint8_t> umsg(14, 0);
+    struct packet_t pkt = make_packet(PKT_ACK, umsg);
+    this->send_packet(&pkt);
+}
+
+void connection_t::save_last_recv(struct packet_t *pkt) {
+    // Guarda ultimo pacote enviado
+    this->last_pkt_recv.tipo = pkt->tipo;
+    this->last_pkt_recv.tam = pkt->tam;
+    this->last_pkt_recv.seq = pkt->seq;
+    this->last_pkt_recv.dados.resize(pkt->tam);
+    copy(pkt->dados.begin(), pkt->dados.end(), this->last_pkt_recv.dados.begin());
+}
+
+void connection_t::save_last_send(struct packet_t *pkt) {
+    // Guarda ultimo pacote enviado
+    this->last_pkt_send.tipo = pkt->tipo;
+    this->last_pkt_send.tam = pkt->tam;
+    this->last_pkt_send.seq = pkt->seq;
+    this->last_pkt_send.dados.resize(pkt->tam);
+    copy(pkt->dados.begin(), pkt->dados.end(), this->last_pkt_send.dados.begin());
+}
+
+void connection_t::update_seq() {
+    // Atualiza sequência apenas se tudo der certo
+    this->seq = (this->seq + 1) % (1<<SEQ_SIZE);
 }
 
 // Envia um pacote e espera por uma resposta. O pacote recebido é processado
