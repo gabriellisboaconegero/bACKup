@@ -121,13 +121,13 @@ struct connection_t {
 
     int send_packet(struct packet_t *pkt);
 
-    void send_erro(uint8_t erro_id);
+    int send_erro(uint8_t erro_id);
 
-    void send_ack();
+    int send_ack();
 
-    void send_nack();
+    int send_nack();
 
-    void send_ok();
+    int send_ok();
 
     void save_last_recv(struct packet_t *pkt);
 

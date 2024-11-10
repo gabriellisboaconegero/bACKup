@@ -2,6 +2,26 @@
 #include "utils.h"
 using namespace std;
 
+bool get_file_name(vector<uint8_t> &name) {
+    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
+    return false;
+}
+
+vector<uint8_t> calculate_cksum() {
+    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
+    return vector<uint8_t>(14, '$');
+}
+
+bool has_disc_space(struct packet_t *pkt) {
+    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
+    return true;
+}
+
+vector<uint8_t> get_file_size(struct packet_t *pkt) {
+    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
+    return vector<uint8_t>(20, '#');
+}
+
 const char *erro_to_str(int tipo) {
     switch (tipo) {
         case NO_FILE_ERRO:          return "Arquivo inexistente"; break;
@@ -25,6 +45,7 @@ const char *tipo_to_str(int tipo) {
         case PKT_DADOS: return "DADOS"; break;
         case PKT_FIM_TX_DADOS: return "FIM_TX_DADOS"; break;
         case PKT_ERRO: return "ERRO"; break;
+        case PKT_UNKNOW: return "UNKNOW"; break;
     }
     return "[ERRO]: Unreachable";
 }

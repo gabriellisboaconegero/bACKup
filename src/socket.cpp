@@ -80,6 +80,7 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
 #ifdef DEBUG
         printf("[ERRO]: CRC incorreto\n");
 #endif
+        this->tipo = PKT_UNKNOW;
         return false;
     }
 
@@ -244,6 +245,10 @@ int connection_t::send_packet(struct packet_t *pkt) {
     vector<uint8_t> buf = pkt->serialize();
     // DEBUG: Altera um bit para verificar se CRC funciona
     // buf[3] ^= 0x80;
+    // Testa corrupção de OK_TAM e NACK
+    // if (pkt->tipo == PKT_OK_TAM || pkt->tipo == PKT_NACK)
+    //     if (rand() % 10 < 5)
+    //         buf[3] = '*';
 
     // Faz o send
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
@@ -270,29 +275,29 @@ struct packet_t connection_t::make_packet(int tipo, vector<uint8_t> &umsg) {
     return pkt;
 }
 
-void connection_t::send_erro(uint8_t erro_id) {
+int connection_t::send_erro(uint8_t erro_id) {
     vector<uint8_t> umsg(14, 0);
     umsg[0] = erro_id;
     struct packet_t pkt = make_packet(PKT_ERRO, umsg);
-    this->send_packet(&pkt);
+    return this->send_packet(&pkt);
 }
 
-void connection_t::send_nack() {
+int connection_t::send_nack() {
     vector<uint8_t> umsg(14, 0);
     struct packet_t pkt = make_packet(PKT_NACK, umsg);
-    this->send_packet(&pkt);
+    return this->send_packet(&pkt);
 }
 
-void connection_t::send_ack() {
+int connection_t::send_ack() {
     vector<uint8_t> umsg(14, 0);
     struct packet_t pkt = make_packet(PKT_ACK, umsg);
-    this->send_packet(&pkt);
+    return this->send_packet(&pkt);
 }
 
-void connection_t::send_ok() {
+int connection_t::send_ok() {
     vector<uint8_t> umsg(14, 0);
     struct packet_t pkt = make_packet(PKT_OK, umsg);
-    this->send_packet(&pkt);
+    return this->send_packet(&pkt);
 }
 
 void connection_t::save_last_recv(struct packet_t *pkt) {
