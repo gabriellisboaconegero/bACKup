@@ -174,6 +174,19 @@ bool connection_t::connect(const char *interface) {
     return true;
 }
 
+// Limpa conexão, ou seja limpa buffer de leitura e escrita
+// para não receber demais.
+// Retorna false em caso de erro
+// Retorna true c.c.
+bool connection_t::reset_connection(const char *interface) {
+    // Faz loop não bloqueante para retirar menssagens
+    if (shutdown(this->socket, SHUT_RDWR) < 0)
+        return false;
+    close(this->socket);
+    this->socket = cria_raw_socket(interface);
+    return this->connect(interface);
+}
+
 long long timestamp() {
     struct timeval tp;
     gettimeofday(&tp, NULL);

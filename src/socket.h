@@ -11,6 +11,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <sys/time.h>
 #include <cerrno>
 #include <cstring>
@@ -104,6 +105,12 @@ struct connection_t {
     // Retorna false se não foi possivel criar socket.
     // Retorn true c.c.
     bool connect(const char *);
+
+    // Limpa conexão, ou seja limpa buffer de leitura e escrita
+    // para não receber demais.
+    // Retorna false em caso de erro
+    // Retorna true c.c.
+    bool reset_connection(const char *interface);
 
     // Espera por um pacote dado um certo intervalo. Se intervalo for 0
     // então não existe timeout.
