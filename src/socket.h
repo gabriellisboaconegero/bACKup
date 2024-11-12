@@ -21,6 +21,12 @@
 #include <sysexits.h>
 #include <algorithm>
 
+// Variaveis de teste de falha, em porcentagem
+// Exemplo: LOST_PACKET_CHANCE = 34
+// significa que tem 3,4% de chance do pacote ser perdido
+#define LOST_PACKET_CHANCE      100 // Porcentagem de quantos pacotes vão ser "perdidos"
+#define CURRUPTED_PACKET_CHANCE 150 // Porcentagem de quantos pacotes vão ser "corrompidos"
+
 // =========== Constantes ===========
 // Marcador de Inicio
 #define PACKET_MI 0x7e // 0b01111110

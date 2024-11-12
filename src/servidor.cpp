@@ -17,9 +17,6 @@ void verifica(struct connection_t *conn) {
         printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
         return;
     }
-#ifdef DEBUG
-    printf("[DEBUG]: Salvando pacote: "); print_packet(&pkt);
-#endif
     printf("-------------------- VERIFICA --------------------\n");
 }
 
@@ -33,12 +30,18 @@ void backup3(struct connection_t *conn) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
             return;
         }
+
         if (res == PKT_TIMEOUT) {
             printf("[TIMEOUT]: Servidor ficou inativo por muito tempo\n");
             printf("[TIMEOUT]: Cancelando operação de BACKUP\n");
             return;
         }
-        printf("[BACKUP3]: Menssagem recebida: "); print_packet(&pkt);
+
+        if (res == PKT_UNKNOW) {
+            conn->send_nack();
+            continue;
+        }
+
         if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
 #ifdef DEBUG
             printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
@@ -75,12 +78,18 @@ void backup2(struct connection_t *conn) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
             return;
         }
+
         if (res == PKT_TIMEOUT) {
             printf("[TIMEOUT]: Servidor ficou inativo por muito tempo\n");
             printf("[TIMEOUT]: Cancelando operação de BACKUP\n");
             return;
         }
-        printf("[BACKUP2]: Menssagem recebida: "); print_packet(&pkt);
+
+        if (res == PKT_UNKNOW) {
+            conn->send_nack();
+            continue;
+        }
+
         if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
 #ifdef DEBUG
             printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
@@ -149,9 +158,6 @@ void restaura2(struct connection_t *conn) {
                 printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
                 return;
             }
-#ifdef DEBUG
-            printf("[DEBUG]: Menssagem Enviada: "); print_packet(&s_pkt);
-#endif
             res = conn->recv_packet(interval, &r_pkt);
             // Se deu algum erro, não quer dizer que packet é do
             // tipo PKT_ERRO ou PKT_NACK
@@ -159,9 +165,6 @@ void restaura2(struct connection_t *conn) {
                 printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
                 return;
             }
-#ifdef DEBUG
-            printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
-#endif
             if (res == PKT_ACK) {
                 // Salva pacote lido e recebido
                 conn->save_last_recv(&r_pkt);
@@ -190,9 +193,6 @@ void restaura2(struct connection_t *conn) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
             return;
         }
-#ifdef DEBUG
-        printf("[DEBUG]: Menssagem enviada: "); print_packet(&s_pkt);
-#endif
         res = conn->recv_packet(interval, &r_pkt);
         // Se deu algum erro, não quer dizer que packet é do
         // tipo PKT_ERRO ou PKT_NACK
@@ -200,9 +200,6 @@ void restaura2(struct connection_t *conn) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
             return;
         }
-#ifdef DEBUG
-        printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
-#endif
         if (res == PKT_ACK) {
             // Salva pacote lido e recebido
             conn->save_last_recv(&r_pkt);
@@ -244,17 +241,11 @@ void restaura(struct connection_t *conn) {
                 printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
                 return;
             }
-#ifdef DEBUG
-            printf("[DEBUG]: Menssagem enviada: (tipo: NACK, seq: 0, size: 14)\n");
-#endif
         }else {
             if (conn->send_packet(&s_pkt) < 0) {
                 printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
                 return;
             }
-#ifdef DEBUG
-            printf("[DEBUG]: Menssagem enviada: "); print_packet(&s_pkt);
-#endif
         }
         res = conn->recv_packet(interval, &r_pkt);
         // Se deu algum erro, não quer dizer que packet é do
@@ -263,9 +254,6 @@ void restaura(struct connection_t *conn) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
             return;
         }
-        #ifdef DEBUG
-        printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
-        #endif
         // Se receber NACK continua enviando. Caso contrario
         if (res == PKT_OK || res == PKT_ERRO) {
             // Salva pacote lido e recebido

@@ -240,11 +240,28 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         printf("OUTGGOING: %d\n", conn->addr.sll_pkttype == PACKET_OUTGOING);
 #endif
 
+#ifdef SIMULATE_UNSTABLE
+        if (rand() % 1000 < LOST_PACKET_CHANCE) {
+            printf("[SIMULATION]: Pacote perdido\n");
+            continue;
+        }
+        if (rand() % 1000 < CURRUPTED_PACKET_CHANCE) {
+            printf("[SIMULATION]: Pacote corrompido\n");
+            buf[2] = '4';
+        }
+#endif
         // Se o pacote for valido então retona Ok
         if (!is_valid_packet(this->addr, buf))
             continue;
-        if (!pkt->deserialize(buf))
+        if (!pkt->deserialize(buf)) {
+#ifdef DEBUG
+            printf("[DEBUG]: Recebido (tipo: UNKNOWN)\n");
+#endif
             return PKT_UNKNOW;
+        }
+#ifdef DEBUG
+        printf("[DEBUG]: Recebido: "); print_packet(pkt);
+#endif
         return pkt->tipo;
     // Continua o loop apenas se não tiver dado timeout ou
     // intervalo de timeout <= 0, ou seja continua para sempre.
@@ -269,6 +286,9 @@ int connection_t::send_packet(struct packet_t *pkt, int save) {
     // Faz o send
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
+#ifdef DEBUG
+    printf("[DEBUG]: Enviado: ");print_packet(pkt);
+#endif
 
     if (save)
         this->save_last_send(pkt);
