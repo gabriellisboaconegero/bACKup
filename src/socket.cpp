@@ -186,8 +186,6 @@ bool connection_t::reset_connection(const char *interface) {
 #ifdef DEBUG
     printf("[DEBUG]: Limpando conexão com busy recv: %s\n", strerror(errno));
 #endif
-    this->first_pkt = true;
-    this->seq = 0;
     // São esses os erros se tiver vazio o buffer
     return errno == EAGAIN || errno == EWOULDBLOCK;
 }

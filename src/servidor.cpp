@@ -43,12 +43,12 @@ void backup3(struct connection_t *conn) {
         }
         // Espera por dados, então manda ack
         if (res == PKT_DADOS) {
-            // Salava ultimo recebido
+            // Salva ultimo recebido
             conn->save_last_recv(&pkt);
             conn->send_ack(1);
         // FIm de transmissão
         } else if (res == PKT_FIM_TX_DADOS) { 
-            // Salava ultimo recebido
+            // Salva ultimo recebido
             conn->save_last_recv(&pkt);
             printf("[BACKUP3]: Fim da recepção de dados\n");
             conn->send_ack(1);
@@ -88,9 +88,10 @@ void backup2(struct connection_t *conn) {
     }
     
     // Verifica se tem espaço ná maquina para armazenar arquivo
-    if (!has_disc_space(&conn->last_pkt_recv)) {
+    if (has_disc_space(&conn->last_pkt_recv)) {
         printf("[ERRO]: Sem espaço no disco para receber arquivo\n");
         conn->send_erro(NO_DISK_SPACE_ERRO, 1);
+        return;
     }
 
     // Confirma recebimento do TAM
@@ -151,15 +152,19 @@ void restaura2(struct connection_t *conn) {
 #ifdef DEBUG
             printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
 #endif
-            if (res == PKT_ACK)
+            if (res == PKT_ACK) {
+                // Salva pacote lido e recebido
+                conn->save_last_recv(&r_pkt);
+                conn->save_last_send(&s_pkt);
+
                 break;
+            }
         }
         // Se alcançou o maximo de retransmissões, marca que teve timeout
         if (round == PACKET_RETRASMISSION_ROUNDS) {
             printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
             return;
         }
-        conn->update_seq();
     }
 
     msg = "[RESTAURA]: Fim dos dados";
@@ -188,15 +193,19 @@ void restaura2(struct connection_t *conn) {
 #ifdef DEBUG
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
 #endif
-        if (res == PKT_ACK)
+        if (res == PKT_ACK) {
+            // Salva pacote lido e recebido
+            conn->save_last_recv(&r_pkt);
+            conn->save_last_send(&s_pkt);
+
             break;
+        }
     }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (round == PACKET_RETRASMISSION_ROUNDS) {
         printf("[RESTAURA:TIMEOUT]: Ocorreu timeout tentando restaurar arquivo\n");
         return;
     }
-    conn->update_seq();
 }
 
 void restaura(struct connection_t *conn) {
@@ -213,7 +222,6 @@ void restaura(struct connection_t *conn) {
 
     vector<uint8_t> file_size = get_file_size(&conn->last_pkt_recv);
     s_pkt = conn->make_packet(PKT_OK_TAM, file_size);
-    conn->save_last_send(&s_pkt);
     // Confirma recebimento do nome do arquivo, e manda tamanho dele
     for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
 #ifdef DEBUG
@@ -249,15 +257,18 @@ void restaura(struct connection_t *conn) {
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
         #endif
         // Se receber NACK continua enviando. Caso contrario
-        if (res == PKT_OK || res == PKT_ERRO)
+        if (res == PKT_OK || res == PKT_ERRO) {
+            // Salva pacote lido e recebido
+            conn->save_last_recv(&r_pkt);
+            conn->save_last_send(&s_pkt);
             break;
+        }
     }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (round == PACKET_RETRASMISSION_ROUNDS) {
         printf("[RESTAURA:TIMEOUT]: Ocorreu timeout ao restaurar arquivo\n");
         return;
     }
-    conn->update_seq();
 
     if (res == PKT_ERRO) {
         printf("[RESTAURA:ERRO]: Erro aconteceu no cliente.\n\tCLIENTE: %s\n", erro_to_str(r_pkt.dados[0]));
@@ -286,6 +297,7 @@ void servidor(string interface) {
     }
 
     while(1) {
+        printf("Escutando...\n");
         res = conn.recv_packet(0, &pkt);
         if (res < 0) {
             printf("[ERRO]: RESPOSTA(%d) Não deveria chegar aqui\n", res);
@@ -310,19 +322,16 @@ void servidor(string interface) {
             case PKT_RESTAURA:
                 conn.save_last_recv(&pkt);
                 restaura(&conn);
-                conn.reset_connection(interface.data());
                 break;
             // Chama função de fazer backup
             case PKT_BACKUP:
                 conn.save_last_recv(&pkt);
                 backup(&conn);
-                conn.reset_connection(interface.data());
                 break;
             // Chama função de verificar
             case PKT_VERIFICA:
                 conn.save_last_recv(&pkt);
                 verifica(&conn);
-                conn.reset_connection(interface.data());
                 break;
             // Recebeu pacote que não entendeu, então manda nack
             case PKT_UNKNOW:

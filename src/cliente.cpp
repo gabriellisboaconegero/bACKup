@@ -187,6 +187,8 @@ void backup2(struct connection_t *conn) {
         #ifdef DEBUG
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
         #endif
+        if (round == 0)
+            continue;
         if (res == PKT_OK || res == PKT_ERRO) {
             // Salva pacote lido e recebido
             conn->save_last_recv(&r_pkt);
@@ -274,14 +276,24 @@ void restaura2(struct connection_t *conn) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
             return;
         }
-        // Salava ultimo recebido
-        conn->save_last_recv(&pkt);
         printf("[RESTAURA2]: Menssagem recebida: "); print_packet(&pkt);
+        if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
+#ifdef DEBUG
+            printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
+            printf("[DEBUG]: Pacote (tipo: %s, seq: %d) correspondente\n", tipo_to_str(conn->last_pkt_recv.tipo), conn->last_pkt_recv.seq);
+#endif
+            conn->send_packet(&conn->last_pkt_send);
+            continue;
+        }
         // Espera por dados, então manda ack
         if (res == PKT_DADOS) {
+            // Salva ultimo recebido
+            conn->save_last_recv(&pkt);
             conn->send_ack(1);
         // FIm de transmissão
         } else if (res == PKT_FIM_TX_DADOS) { 
+            // Salva ultimo recebido
+            conn->save_last_recv(&pkt);
             printf("[RESTAURA2]: Fim da recepção de dados\n");
             conn->send_ack(1);
             break;
@@ -340,15 +352,19 @@ void restaura(struct connection_t *conn) {
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
         #endif
         // Se receber NACK continua enviando. Caso contrario
-        if (res == PKT_OK_TAM || res == PKT_ERRO)
+        if (res == PKT_OK_TAM || res == PKT_ERRO) {
+            // Salva pacote lido e recebido
+            conn->save_last_recv(&r_pkt);
+            conn->save_last_send(&s_pkt);
+
             break;
+        }
     }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (round == PACKET_RETRASMISSION_ROUNDS) {
         printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
         return;
     }
-    conn->update_seq();
 
     if (res == PKT_ERRO) {
         printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
