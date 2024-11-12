@@ -1,27 +1,25 @@
 #include "socket.h"
 #include "utils.h"
-#define SEND_NACK 101
 using namespace std;
 
 void verifica(struct connection_t *conn) {
     // Verifica se arquivo existe, senão manda erro e sai
     printf("-------------------- VERIFICA --------------------\n");
     if (get_file_name(conn->last_pkt_recv.dados)) {
-        conn->send_erro(NO_FILE_ERRO);
+        conn->send_erro(NO_FILE_ERRO, 1);
         return;
     }
     
     // Faz checksum do arquivo e retorna
     vector<uint8_t> umsg = calculate_cksum();
     struct packet_t pkt = conn->make_packet(PKT_OK_CKSUM, umsg);
-    if (conn->send_packet(&pkt) < 0) {
+    if (conn->send_packet(&pkt, 1) < 0) {
         printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
         return;
     }
 #ifdef DEBUG
     printf("[DEBUG]: Salvando pacote: "); print_packet(&pkt);
 #endif
-    conn->save_last_send(&pkt);
     printf("-------------------- VERIFICA --------------------\n");
 }
 
@@ -35,16 +33,25 @@ void backup3(struct connection_t *conn) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
             return;
         }
-        // Salava ultimo recebido
-        conn->save_last_recv(&pkt);
         printf("[BACKUP3]: Menssagem recebida: "); print_packet(&pkt);
+        if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
+#ifdef DEBUG
+            printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
+#endif
+            conn->send_packet(&conn->last_pkt_send);
+            continue;
+        }
         // Espera por dados, então manda ack
         if (res == PKT_DADOS) {
-            conn->send_ack();
+            // Salava ultimo recebido
+            conn->save_last_recv(&pkt);
+            conn->send_ack(1);
         // FIm de transmissão
         } else if (res == PKT_FIM_TX_DADOS) { 
+            // Salava ultimo recebido
+            conn->save_last_recv(&pkt);
             printf("[BACKUP3]: Fim da recepção de dados\n");
-            conn->send_ack();
+            conn->send_ack(1);
             break;
         // Qualquer coisa que não seja DADOS e FIM manda nack
         } else {
@@ -63,11 +70,18 @@ void backup2(struct connection_t *conn) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
             return;
         }
-        // Salava ultimo recebido
-        conn->save_last_recv(&pkt);
         printf("[BACKUP2]: Menssagem recebida: "); print_packet(&pkt);
+        if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
+#ifdef DEBUG
+            printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
+#endif
+            conn->send_packet(&conn->last_pkt_send);
+            continue;
+        }
         // Espera receber TAM do cliente
         if (res == PKT_TAM) {
+            // Salava ultimo recebido
+            conn->save_last_recv(&pkt);
             break;
         }
         conn->send_nack();
@@ -76,11 +90,11 @@ void backup2(struct connection_t *conn) {
     // Verifica se tem espaço ná maquina para armazenar arquivo
     if (!has_disc_space(&conn->last_pkt_recv)) {
         printf("[ERRO]: Sem espaço no disco para receber arquivo\n");
-        conn->send_erro(NO_DISK_SPACE_ERRO);
+        conn->send_erro(NO_DISK_SPACE_ERRO, 1);
     }
 
     // Confirma recebimento do TAM
-    conn->send_ok();
+    conn->send_ok(1);
     backup3(conn);
 }
 
@@ -91,12 +105,12 @@ void backup(struct connection_t *conn) {
     // Se o arquivo ja existir verifica se tem acesso a ele.
     if (get_file_name(conn->last_pkt_recv.dados)) {
         printf("[ERRO]: Sem acesso a arquivo\n");
-        conn->send_erro(NO_FILE_ACCESS_ERRO);
+        conn->send_erro(NO_FILE_ACCESS_ERRO, 1);
         return;
     }
 
     // Confirma recebimento do nome do arquivo
-    conn->send_ok();
+    conn->send_ok(1);
 
     backup2(conn);
     printf("-------------------- BACKUP --------------------\n");
@@ -193,7 +207,7 @@ void restaura(struct connection_t *conn) {
     // Se o arquivo ja existir verifica se tem acesso a ele.
     if (get_file_name(conn->last_pkt_recv.dados)) {
         printf("[ERRO]: Sem acesso a arquivo\n");
-        conn->send_erro(NO_FILE_ACCESS_ERRO);
+        conn->send_erro(NO_FILE_ACCESS_ERRO, 1);
         return;
     }
 
@@ -278,58 +292,37 @@ void servidor(string interface) {
             printf("[ERRNO]: %s\n", strerror(errno));
             exit(1);
         }
-        #ifdef DEBUG
-        printf("[DEBUG]: MENSSAGEM RECEBIDA: "); print_packet(&pkt);
-        #endif
+#ifdef DEBUG
+        printf("[DEBUG]: PACOTE RECEBIDO: "); print_packet(&pkt);
+#endif
+        // verifica se já processou pacote recebido
+        if (!conn.first_pkt &&
+                SEQ_MOD(conn.last_pkt_recv.seq) == SEQ_MOD(pkt.seq))
+        {
+#ifdef DEBUG
+            printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
+#endif
+            conn.send_packet(&conn.last_pkt_send);
+            continue;
+        }
         switch (res) {
             // Chama função de restaurar arquivos
             case PKT_RESTAURA:
-                // verifica se já processou pacote recebido
-                if (!conn.first_pkt &&
-                    SEQ_MOD(conn.last_pkt_recv.seq) == SEQ_MOD(pkt.seq))
-                {
-#ifdef DEBUG
-                    printf("[DEBUG]: Pacote com (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
-#endif
-                    conn.send_packet(&conn.last_pkt_send);
-                } else {
-                    conn.save_last_recv(&pkt);
-                    restaura(&conn);
-                }
+                conn.save_last_recv(&pkt);
+                restaura(&conn);
+                conn.reset_connection(interface.data());
                 break;
             // Chama função de fazer backup
             case PKT_BACKUP:
-                // verifica se já processou pacote recebido
-                if (!conn.first_pkt &&
-                    SEQ_MOD(conn.last_pkt_recv.seq) == SEQ_MOD(pkt.seq))
-                {
-#ifdef DEBUG
-                    printf("[DEBUG]: Pacote com (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
-#endif
-                    conn.send_packet(&conn.last_pkt_send);
-                } else {
-                    conn.save_last_recv(&pkt);
-                    backup(&conn);
-                }
+                conn.save_last_recv(&pkt);
+                backup(&conn);
+                conn.reset_connection(interface.data());
                 break;
             // Chama função de verificar
             case PKT_VERIFICA:
-#ifdef DEBUG
-                if (!conn.first_pkt)
-                    printf("[DEBUG]: Pacote salvo: "); print_packet(&pkt);
-#endif
-                // verifica se já processou pacote recebido
-                if (!conn.first_pkt &&
-                    SEQ_MOD(conn.last_pkt_recv.seq) == SEQ_MOD(pkt.seq))
-                {
-#ifdef DEBUG
-                    printf("[DEBUG]: Pacote com (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
-#endif
-                    conn.send_packet(&conn.last_pkt_send);
-                } else {
-                    conn.save_last_recv(&pkt);
-                    verifica(&conn);
-                }
+                conn.save_last_recv(&pkt);
+                verifica(&conn);
+                conn.reset_connection(interface.data());
                 break;
             // Recebeu pacote que não entendeu, então manda nack
             case PKT_UNKNOW:

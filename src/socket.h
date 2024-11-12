@@ -131,15 +131,15 @@ struct connection_t {
     // Retorna OK c.c
     struct packet_t make_packet(int tipo, std::vector<uint8_t> &umsg);
 
-    int send_packet(struct packet_t *pkt);
+    int send_packet(struct packet_t *pkt, int save = 0);
 
-    int send_erro(uint8_t erro_id);
+    int send_erro(uint8_t erro_id, int save);
 
-    int send_ack();
+    int send_ack(int save);
 
     int send_nack();
 
-    int send_ok();
+    int send_ok(int save);
 
     void save_last_recv(struct packet_t *pkt);
 

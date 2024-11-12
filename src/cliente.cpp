@@ -37,19 +37,19 @@ void verifica(struct connection_t *conn) {
         #ifdef DEBUG
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
         #endif
-        if (round == 0)
-            continue;
-        if (res == PKT_OK_CKSUM || res == PKT_ERRO)
+        if (res == PKT_OK_CKSUM || res == PKT_ERRO) {
+            // Salva pacote lido e recebido
+            conn->save_last_recv(&r_pkt);
+            conn->save_last_send(&s_pkt);
+
             break;
+        }
     }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (round == PACKET_RETRASMISSION_ROUNDS) {
         printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
         return;
     }
-    conn->save_last_send(&s_pkt);
-    conn->save_last_recv(&r_pkt);
-    conn->update_seq();
     if (res == PKT_ERRO) {
         printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
@@ -97,15 +97,19 @@ void backup3(struct connection_t *conn) {
 #ifdef DEBUG
             printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
 #endif
-            if (res == PKT_ACK)
+            if (res == PKT_ACK) {
+                // Salva pacote lido e recebido
+                conn->save_last_recv(&r_pkt);
+                conn->save_last_send(&s_pkt);
+
                 break;
+            }
         }
         // Se alcançou o maximo de retransmissões, marca que teve timeout
         if (round == PACKET_RETRASMISSION_ROUNDS) {
             printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
             return;
         }
-        conn->update_seq();
     }
 
     msg = "[BACKUP]: Fim dos dados";
@@ -134,15 +138,19 @@ void backup3(struct connection_t *conn) {
 #ifdef DEBUG
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
 #endif
-        if (res == PKT_ACK)
+        if (res == PKT_ACK) {
+            // Salva pacote lido e recebido
+            conn->save_last_recv(&r_pkt);
+            conn->save_last_send(&s_pkt);
+
             break;
+        }
     }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (round == PACKET_RETRASMISSION_ROUNDS) {
         printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
         return;
     }
-    conn->update_seq();
 }
 
 void backup2(struct connection_t *conn) {
@@ -179,8 +187,13 @@ void backup2(struct connection_t *conn) {
         #ifdef DEBUG
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
         #endif
-        if (res == PKT_OK || res == PKT_ERRO)
+        if (res == PKT_OK || res == PKT_ERRO) {
+            // Salva pacote lido e recebido
+            conn->save_last_recv(&r_pkt);
+            conn->save_last_send(&s_pkt);
+
             break;
+        }
     }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (round == PACKET_RETRASMISSION_ROUNDS) {
@@ -191,7 +204,6 @@ void backup2(struct connection_t *conn) {
         printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
-    conn->update_seq();
 
     backup3(conn);
 }
@@ -231,8 +243,13 @@ void backup(struct connection_t *conn) {
         #ifdef DEBUG
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
         #endif
-        if (res == PKT_OK || res == PKT_ERRO)
+        if (res == PKT_OK || res == PKT_ERRO) {
+            // Salva pacote lido e recebido
+            conn->save_last_recv(&r_pkt);
+            conn->save_last_send(&s_pkt);
+
             break;
+        }
     }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (round == PACKET_RETRASMISSION_ROUNDS) {
@@ -243,7 +260,6 @@ void backup(struct connection_t *conn) {
         printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
-    conn->update_seq();
 
     backup2(conn);
 }
@@ -263,11 +279,11 @@ void restaura2(struct connection_t *conn) {
         printf("[RESTAURA2]: Menssagem recebida: "); print_packet(&pkt);
         // Espera por dados, então manda ack
         if (res == PKT_DADOS) {
-            conn->send_ack();
+            conn->send_ack(1);
         // FIm de transmissão
         } else if (res == PKT_FIM_TX_DADOS) { 
             printf("[RESTAURA2]: Fim da recepção de dados\n");
-            conn->send_ack();
+            conn->send_ack(1);
             break;
         // Qualquer coisa que não seja DADOS e FIM manda nack
         } else {
@@ -340,11 +356,11 @@ void restaura(struct connection_t *conn) {
     }
     // Senão tiver espaço manda erro.
     if (!has_disc_space(&r_pkt)) {
-        conn->send_erro(NO_DISK_SPACE_ERRO);
+        conn->send_erro(NO_DISK_SPACE_ERRO, 1);
         return;
     }
     //  Envia OK para sinalizar que pode receber os arquivos
-    conn->send_ok();
+    conn->send_ok(1);
 
     restaura2(conn);
 }

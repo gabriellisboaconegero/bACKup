@@ -186,6 +186,8 @@ bool connection_t::reset_connection(const char *interface) {
 #ifdef DEBUG
     printf("[DEBUG]: Limpando conexão com busy recv: %s\n", strerror(errno));
 #endif
+    this->first_pkt = true;
+    this->seq = 0;
     // São esses os erros se tiver vazio o buffer
     return errno == EAGAIN || errno == EWOULDBLOCK;
 }
@@ -257,7 +259,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
 // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
 // Retorna SEND_ERR em caso de erro ao fazer send
 // Retorna OK c.c
-int connection_t::send_packet(struct packet_t *pkt) {
+int connection_t::send_packet(struct packet_t *pkt, int save) {
     vector<uint8_t> buf = pkt->serialize();
     // DEBUG: Altera um bit para verificar se CRC funciona
     // buf[3] ^= 0x80;
@@ -269,6 +271,9 @@ int connection_t::send_packet(struct packet_t *pkt) {
     // Faz o send
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
+
+    if (save)
+        this->save_last_send(pkt);
 
     return OK;
 }
@@ -291,11 +296,11 @@ struct packet_t connection_t::make_packet(int tipo, vector<uint8_t> &umsg) {
     return pkt;
 }
 
-int connection_t::send_erro(uint8_t erro_id) {
+int connection_t::send_erro(uint8_t erro_id, int save) {
     vector<uint8_t> umsg(14, 0);
     umsg[0] = erro_id;
     struct packet_t pkt = make_packet(PKT_ERRO, umsg);
-    return this->send_packet(&pkt);
+    return this->send_packet(&pkt, save);
 }
 
 int connection_t::send_nack() {
@@ -304,16 +309,16 @@ int connection_t::send_nack() {
     return this->send_packet(&pkt);
 }
 
-int connection_t::send_ack() {
+int connection_t::send_ack(int save) {
     vector<uint8_t> umsg(14, 0);
     struct packet_t pkt = make_packet(PKT_ACK, umsg);
-    return this->send_packet(&pkt);
+    return this->send_packet(&pkt, save);
 }
 
-int connection_t::send_ok() {
+int connection_t::send_ok(int save) {
     vector<uint8_t> umsg(14, 0);
     struct packet_t pkt = make_packet(PKT_OK, umsg);
-    return this->send_packet(&pkt);
+    return this->send_packet(&pkt, save);
 }
 
 void connection_t::save_last_recv(struct packet_t *pkt) {
@@ -322,8 +327,8 @@ void connection_t::save_last_recv(struct packet_t *pkt) {
     this->last_pkt_recv.tam = pkt->tam;
     this->last_pkt_recv.seq = pkt->seq;
     this->last_pkt_recv.dados.resize(pkt->tam);
-    this->first_pkt = false;
     copy(pkt->dados.begin(), pkt->dados.end(), this->last_pkt_recv.dados.begin());
+    this->first_pkt = false;
 }
 
 void connection_t::save_last_send(struct packet_t *pkt) {
@@ -333,6 +338,7 @@ void connection_t::save_last_send(struct packet_t *pkt) {
     this->last_pkt_send.seq = pkt->seq;
     this->last_pkt_send.dados.resize(pkt->tam);
     copy(pkt->dados.begin(), pkt->dados.end(), this->last_pkt_send.dados.begin());
+    this->update_seq();
 }
 
 void connection_t::update_seq() {
