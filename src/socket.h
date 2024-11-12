@@ -33,7 +33,9 @@
 
 // Configuração de retransmissão
 #define PACKET_TIMEOUT_INTERVAL         250 // Tempo até retransmissão (em milisegundos)
-#define PACKET_RETRASMISSION_ROUNDS     10    // Quantidade de retransmissões máximas
+#define PACKET_RETRASMISSION_ROUNDS     10  // Quantidade de retransmissões máximas
+#define RECEIVER_MAX_TIMEOUT            1000 // Quantidade maxima  de tempo que receiver vai ficar
+                                             // sem receber nenhum pacote.
 
 // Function return codes
 #define MSG_TO_BIG      -1

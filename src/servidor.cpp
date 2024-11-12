@@ -28,9 +28,14 @@ void backup3(struct connection_t *conn) {
     int res;
     
     while (1) {
-        res = conn->recv_packet(0, &pkt);
+        res = conn->recv_packet(RECEIVER_MAX_TIMEOUT, &pkt);
         if (res < 0) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
+            return;
+        }
+        if (res == PKT_TIMEOUT) {
+            printf("[TIMEOUT]: Servidor ficou inativo por muito tempo\n");
+            printf("[TIMEOUT]: Cancelando operação de BACKUP\n");
             return;
         }
         printf("[BACKUP3]: Menssagem recebida: "); print_packet(&pkt);
@@ -65,9 +70,14 @@ void backup2(struct connection_t *conn) {
     int res;
 
     while(1) {
-        res = conn->recv_packet(0, &pkt);
+        res = conn->recv_packet(RECEIVER_MAX_TIMEOUT, &pkt);
         if (res < 0) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
+            return;
+        }
+        if (res == PKT_TIMEOUT) {
+            printf("[TIMEOUT]: Servidor ficou inativo por muito tempo\n");
+            printf("[TIMEOUT]: Cancelando operação de BACKUP\n");
             return;
         }
         printf("[BACKUP2]: Menssagem recebida: "); print_packet(&pkt);
@@ -88,7 +98,7 @@ void backup2(struct connection_t *conn) {
     }
     
     // Verifica se tem espaço ná maquina para armazenar arquivo
-    if (has_disc_space(&conn->last_pkt_recv)) {
+    if (!has_disc_space(&conn->last_pkt_recv)) {
         printf("[ERRO]: Sem espaço no disco para receber arquivo\n");
         conn->send_erro(NO_DISK_SPACE_ERRO, 1);
         return;

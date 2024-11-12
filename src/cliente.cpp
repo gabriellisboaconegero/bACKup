@@ -187,8 +187,6 @@ void backup2(struct connection_t *conn) {
         #ifdef DEBUG
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
         #endif
-        if (round == 0)
-            continue;
         if (res == PKT_OK || res == PKT_ERRO) {
             // Salva pacote lido e recebido
             conn->save_last_recv(&r_pkt);
@@ -271,16 +269,20 @@ void restaura2(struct connection_t *conn) {
     int res;
     
     while (1) {
-        res = conn->recv_packet(0, &pkt);
+        res = conn->recv_packet(RECEIVER_MAX_TIMEOUT, &pkt);
         if (res < 0) {
             printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
+            return;
+        }
+        if (res == PKT_TIMEOUT) {
+            printf("[TIMEOUT]: Cliente ficou inativo por muito tempo\n");
+            printf("[TIMEOUT]: Cancelando operação de RESTAURA\n");
             return;
         }
         printf("[RESTAURA2]: Menssagem recebida: "); print_packet(&pkt);
         if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
 #ifdef DEBUG
             printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
-            printf("[DEBUG]: Pacote (tipo: %s, seq: %d) correspondente\n", tipo_to_str(conn->last_pkt_recv.tipo), conn->last_pkt_recv.seq);
 #endif
             conn->send_packet(&conn->last_pkt_send);
             continue;
@@ -404,6 +406,12 @@ void cliente(string interface) {
         if (opt > 3 && opt < 0)
             exit(1);
 
+        // Limpa socket antes da próxima ação
+        if (!conn.reset_connection(interface.data())) {
+            printf("[ERRO]: Não foi possível restabelecer a conexão: %s\n", strerror(errno));
+            exit(1);
+        }
+
         switch (opts[opt]) {
             // Chama função de restaurar arquivos
             case PKT_RESTAURA:
@@ -424,12 +432,6 @@ void cliente(string interface) {
             default:
                 printf("[ERRO]: Impossivel chegar aqui (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
                 exit(1);
-        }
-
-        // Limpa socket antes da próxima conexão
-        if (!conn.reset_connection(interface.data())) {
-            printf("[ERRO]: Não foi possível restabelecer a conexão: %s\n", strerror(errno));
-            exit(1);
         }
     }
     cout << "Saindo do cliente" << endl;
