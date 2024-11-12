@@ -37,6 +37,8 @@ void verifica(struct connection_t *conn) {
         #ifdef DEBUG
         printf("[DEBUG]: Menssagem Recebida: "); print_packet(&r_pkt);
         #endif
+        if (round == 0)
+            continue;
         if (res == PKT_OK_CKSUM || res == PKT_ERRO)
             break;
     }
@@ -45,12 +47,13 @@ void verifica(struct connection_t *conn) {
         printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
         return;
     }
+    conn->save_last_send(&s_pkt);
+    conn->save_last_recv(&r_pkt);
+    conn->update_seq();
     if (res == PKT_ERRO) {
         printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
-    conn->save_last_send(&s_pkt);
-    conn->update_seq();
 
     // Calcula cksum também e verifica se é igual
     if (calculate_cksum() == r_pkt.dados) {

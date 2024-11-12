@@ -169,6 +169,7 @@ bool is_valid_packet(struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
 bool connection_t::connect(const char *interface) {
     this->socket = cria_raw_socket(interface);
     this->seq = 0;
+    this->first_pkt = true;
     if (this->socket < 0)
         return false;
     return true;
@@ -180,11 +181,13 @@ bool connection_t::connect(const char *interface) {
 // Retorna true c.c.
 bool connection_t::reset_connection(const char *interface) {
     // Faz loop não bloqueante para retirar menssagens
-    if (shutdown(this->socket, SHUT_RDWR) < 0)
-        return false;
-    close(this->socket);
-    this->socket = cria_raw_socket(interface);
-    return this->connect(interface);
+    char buf[1024];
+    while (recv(this->socket, buf, sizeof(buf), MSG_DONTWAIT) > 0);
+#ifdef DEBUG
+    printf("[DEBUG]: Limpando conexão com busy recv: %s\n", strerror(errno));
+#endif
+    // São esses os erros se tiver vazio o buffer
+    return errno == EAGAIN || errno == EWOULDBLOCK;
 }
 
 long long timestamp() {
@@ -319,6 +322,7 @@ void connection_t::save_last_recv(struct packet_t *pkt) {
     this->last_pkt_recv.tam = pkt->tam;
     this->last_pkt_recv.seq = pkt->seq;
     this->last_pkt_recv.dados.resize(pkt->tam);
+    this->first_pkt = false;
     copy(pkt->dados.begin(), pkt->dados.end(), this->last_pkt_recv.dados.begin());
 }
 
@@ -333,7 +337,7 @@ void connection_t::save_last_send(struct packet_t *pkt) {
 
 void connection_t::update_seq() {
     // Atualiza sequência apenas se tudo der certo
-    this->seq = (this->seq + 1) % (1<<SEQ_SIZE);
+    this->seq = SEQ_MOD(this->seq + 1);
 }
 
 // Envia um pacote e espera por uma resposta. O pacote recebido é processado

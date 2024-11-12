@@ -71,10 +71,14 @@
 #define SEQ_SIZE            5
 #define TIPO_SIZE           5
 #define CRC_SIZE            8
-// Tamanho minimo e maximo de um packet e dados (em bytes)
+// Tamanho minimo e maximo de packet, seq e dados (em bytes)
 #define PACKET_MIN_SIZE         ((MI_SIZE + TAM_SIZE + SEQ_SIZE + TIPO_SIZE + CRC_SIZE)/8)
 #define PACKET_MAX_DADOS_SIZE   ((1<<TAM_SIZE)-1)
 #define PACKET_MAX_SIZE         (PACKET_MIN_SIZE + PACKET_MAX_DADOS_SIZE)
+#define PACKET_MAX_SEQ_SIZE     (1<<SEQ_SIZE)
+
+// Modulo operation
+#define SEQ_MOD(x) (((x) + PACKET_MAX_SEQ_SIZE) % PACKET_MAX_SEQ_SIZE)
 // =========== Constantes ===========
 
 
@@ -99,6 +103,7 @@ struct connection_t {
     uint8_t seq;
     struct packet_t last_pkt_send;
     struct packet_t last_pkt_recv;
+    bool first_pkt;
     struct sockaddr_ll addr;
 
     // Cria raw socket de conexão e inicializa struct.
