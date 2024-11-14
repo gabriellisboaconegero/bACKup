@@ -22,6 +22,15 @@ vector<uint8_t> get_file_size(struct packet_t *pkt) {
     return vector<uint8_t>(20, '#');
 }
 
+size_t get_file_size(string filename) {
+    FILE *p_file = NULL;
+    p_file = fopen(filename.c_str(),"rb");
+    fseek(p_file,0,SEEK_END);
+    int size = ftell(p_file);
+    fclose(p_file);
+    return size;
+}
+
 const char *erro_to_str(int tipo) {
     switch (tipo) {
         case NO_FILE_ERRO:          return "Arquivo inexistente"; break;

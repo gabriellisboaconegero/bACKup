@@ -69,7 +69,7 @@ void backup3(struct connection_t *conn) {
     }
 }
 
-void backup2(struct connection_t *conn) {
+void backup2(struct connection_t *conn, string file_name) {
     string msg = "[BACKUP]: Tamanho do arquivo";
     vector<uint8_t> umsg;
     int res;
@@ -96,20 +96,28 @@ void backup2(struct connection_t *conn) {
     backup3(conn);
 }
 
-void backup(struct connection_t *conn) {
+void backup(struct connection_t *conn, string file_name) {
     // Verifica se arquivo existe, senão manda erro e sai
-    string msg = "[BACKUP]: Nome do arquivo";
     vector<uint8_t> umsg;
     int res;
     struct packet_t s_pkt, r_pkt;
 
     // Pega nome do arquivo e coloca em umsg
-    umsg.resize(msg.size());
-    copy(msg.begin(), msg.end(), umsg.begin());
+    umsg.resize(file_name.size());
+    copy(file_name.begin(), file_name.end(), umsg.begin());
 
     s_pkt = conn->make_packet(PKT_BACKUP, umsg);
 
+    // envia nome do arquivo e espera por PKT_ERRO ou PKT_OK
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ERRO, PKT_OK}, PACKET_TIMEOUT_INTERVAL);
+    if (res == MSG_TO_BIG) {
+        printf("Arquivo %s tem nome grande demais. Insira arquivo com nome menor\n", file_name.data());
+        return;
+    }
+
+    if (res < 0)
+        return;
+
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (res == PKT_TIMEOUT) {
         printf("[BACKUP:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
@@ -120,7 +128,7 @@ void backup(struct connection_t *conn) {
         return;
     }
 
-    backup2(conn);
+    backup2(conn, file_name);
 }
 
 void restaura2(struct connection_t *conn) {
@@ -213,6 +221,7 @@ void cliente(string interface) {
     struct connection_t conn;
     struct packet_t pkt;
     int opt;
+    string file_name;
     // Apresenta opções de escolha. BACKUP, VERIFICA e RESTAURA
     int opts[3] = {
         PKT_VERIFICA,
@@ -239,15 +248,17 @@ void cliente(string interface) {
         }
 
         switch (opts[opt]) {
+            case PKT_BACKUP:
+                printf("Digite o caminho do arquivo: ");
+                cin >> file_name;
+                backup(&conn, file_name);
+                break;
+                // Chama função de verificar
             // Chama função de restaurar arquivos
             case PKT_RESTAURA:
                 restaura(&conn);
                 break;
                 // Chama função de fazer backup
-            case PKT_BACKUP:
-                backup(&conn);
-                break;
-                // Chama função de verificar
             case PKT_VERIFICA:
                 verifica(&conn);
                 break;
