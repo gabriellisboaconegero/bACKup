@@ -24,8 +24,8 @@
 // Variaveis de teste de falha, em porcentagem
 // Exemplo: LOST_PACKET_CHANCE = 34
 // significa que tem 3,4% de chance do pacote ser perdido
-#define LOST_PACKET_CHANCE      100 // Porcentagem de quantos pacotes vão ser "perdidos"
-#define CURRUPTED_PACKET_CHANCE 150 // Porcentagem de quantos pacotes vão ser "corrompidos"
+#define LOST_PACKET_CHANCE      50 // Porcentagem de quantos pacotes vão ser "perdidos"
+#define CURRUPTED_PACKET_CHANCE 50 // Porcentagem de quantos pacotes vão ser "corrompidos"
 
 // =========== Constantes ===========
 // Marcador de Inicio
@@ -140,6 +140,10 @@ struct connection_t {
     struct packet_t make_packet(int tipo, std::vector<uint8_t> &umsg);
 
     int send_packet(struct packet_t *pkt, int save = 0);
+
+    int send_await_packet(
+            struct packet_t *s_pkt, struct packet_t *r_pkt,
+            std::vector<uint8_t> esperados, int interval, bool nacks = false);
 
     int send_erro(uint8_t erro_id, int save);
 

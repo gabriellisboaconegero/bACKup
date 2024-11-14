@@ -6,7 +6,7 @@ void verifica(struct connection_t *conn) {
     // Verifica se arquivo existe, senão manda erro e sai
     string msg = "[VERIFICA]: Nome do arquivo";
     vector<uint8_t> umsg;
-    int res, round, interval = PACKET_TIMEOUT_INTERVAL;
+    int res;
     struct packet_t s_pkt, r_pkt;
 
     // Pega nome do arquivo e coloca em umsg
@@ -15,31 +15,9 @@ void verifica(struct connection_t *conn) {
 
     s_pkt = conn->make_packet(PKT_VERIFICA, umsg);
 
-    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
-#ifdef DEBUG
-        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
-#endif
-        if (conn->send_packet(&s_pkt) < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        res = conn->recv_packet(interval, &r_pkt);
-        // Se deu algum erro, não quer dizer que packet é do
-        // tipo PKT_ERRO ou PKT_NACK
-        if (res < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        if (res == PKT_OK_CKSUM || res == PKT_ERRO) {
-            // Salva pacote lido e recebido
-            conn->save_last_recv(&r_pkt);
-            conn->save_last_send(&s_pkt);
-
-            break;
-        }
-    }
+    res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ERRO, PKT_OK_CKSUM}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
-    if (round == PACKET_RETRASMISSION_ROUNDS) {
+    if (res == PKT_TIMEOUT) {
         printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
         return;
     }
@@ -59,7 +37,7 @@ void verifica(struct connection_t *conn) {
 void backup3(struct connection_t *conn) {
     string msg = "[BACKUP]: Dados do arquivo";
     vector<uint8_t> umsg;
-    int res, round, interval = PACKET_TIMEOUT_INTERVAL;
+    int res;
     struct packet_t s_pkt, r_pkt;
 
     // Pega nome do arquivo e coloca em umsg
@@ -67,34 +45,12 @@ void backup3(struct connection_t *conn) {
     copy(msg.begin(), msg.end(), umsg.begin());
 
     for (int i = 0; i < 5; i++) {
-        // Envia menssagem nome até receber PKT_ERRO ou PKT_OK
         s_pkt = conn->make_packet(PKT_DADOS, umsg);
-        for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
-#ifdef DEBUG
-            printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
-#endif
-            if (conn->send_packet(&s_pkt) < 0) {
-                printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-                return;
-            }
-            res = conn->recv_packet(interval, &r_pkt);
-            // Se deu algum erro, não quer dizer que packet é do
-            // tipo PKT_ERRO ou PKT_NACK
-            if (res < 0) {
-                printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-                return;
-            }
-            if (res == PKT_ACK) {
-                // Salva pacote lido e recebido
-                conn->save_last_recv(&r_pkt);
-                conn->save_last_send(&s_pkt);
-
-                break;
-            }
-        }
+        // Envia menssagem nome até receber PKT_ACK
+        res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
         // Se alcançou o maximo de retransmissões, marca que teve timeout
-        if (round == PACKET_RETRASMISSION_ROUNDS) {
-            printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
+        if (res == PKT_TIMEOUT) {
+            printf("[BACKUP3:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
             return;
         }
     }
@@ -104,32 +60,11 @@ void backup3(struct connection_t *conn) {
     copy(msg.begin(), msg.end(), umsg.begin());
 
     s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, umsg);
-    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
-#ifdef DEBUG
-        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
-#endif
-        if (conn->send_packet(&s_pkt) < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        res = conn->recv_packet(interval, &r_pkt);
-        // Se deu algum erro, não quer dizer que packet é do
-        // tipo PKT_ERRO ou PKT_NACK
-        if (res < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        if (res == PKT_ACK) {
-            // Salva pacote lido e recebido
-            conn->save_last_recv(&r_pkt);
-            conn->save_last_send(&s_pkt);
-
-            break;
-        }
-    }
+    // Envia menssagem nome até receber PKT_ACK
+    res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
-    if (round == PACKET_RETRASMISSION_ROUNDS) {
-        printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
+    if (res == PKT_TIMEOUT) {
+        printf("[BACKUP3:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
         return;
     }
 }
@@ -137,7 +72,7 @@ void backup3(struct connection_t *conn) {
 void backup2(struct connection_t *conn) {
     string msg = "[BACKUP]: Tamanho do arquivo";
     vector<uint8_t> umsg;
-    int res, round, interval = PACKET_TIMEOUT_INTERVAL;
+    int res;
     struct packet_t s_pkt, r_pkt;
 
     // Pega nome do arquivo e coloca em umsg
@@ -147,36 +82,14 @@ void backup2(struct connection_t *conn) {
     s_pkt = conn->make_packet(PKT_TAM, umsg);
 
     // Envia menssagem nome até receber PKT_ERRO ou PKT_OK
-    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
-#ifdef DEBUG
-        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
-#endif
-        if (conn->send_packet(&s_pkt) < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        res = conn->recv_packet(interval, &r_pkt);
-        // Se deu algum erro, não quer dizer que packet é do
-        // tipo PKT_ERRO ou PKT_NACK
-        if (res < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        if (res == PKT_OK || res == PKT_ERRO) {
-            // Salva pacote lido e recebido
-            conn->save_last_recv(&r_pkt);
-            conn->save_last_send(&s_pkt);
-
-            break;
-        }
-    }
+    res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ERRO, PKT_OK}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
-    if (round == PACKET_RETRASMISSION_ROUNDS) {
-        printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
+    if (res == PKT_TIMEOUT) {
+        printf("[BACKUP2:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
         return;
     }
     if (res == PKT_ERRO) {
-        printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
+        printf("[BACKUP2:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
 
@@ -187,7 +100,7 @@ void backup(struct connection_t *conn) {
     // Verifica se arquivo existe, senão manda erro e sai
     string msg = "[BACKUP]: Nome do arquivo";
     vector<uint8_t> umsg;
-    int res, round, interval = PACKET_TIMEOUT_INTERVAL;
+    int res;
     struct packet_t s_pkt, r_pkt;
 
     // Pega nome do arquivo e coloca em umsg
@@ -196,37 +109,14 @@ void backup(struct connection_t *conn) {
 
     s_pkt = conn->make_packet(PKT_BACKUP, umsg);
 
-    // Envia menssagem nome até receber PKT_ERRO ou PKT_OK
-    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
-#ifdef DEBUG
-        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
-#endif
-        if (conn->send_packet(&s_pkt) < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        res = conn->recv_packet(interval, &r_pkt);
-        // Se deu algum erro, não quer dizer que packet é do
-        // tipo PKT_ERRO ou PKT_NACK
-        if (res < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        if (res == PKT_OK || res == PKT_ERRO) {
-            // Salva pacote lido e recebido
-            conn->save_last_recv(&r_pkt);
-            conn->save_last_send(&s_pkt);
-
-            break;
-        }
-    }
+    res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ERRO, PKT_OK}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
-    if (round == PACKET_RETRASMISSION_ROUNDS) {
-        printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
+    if (res == PKT_TIMEOUT) {
+        printf("[BACKUP:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
         return;
     }
     if (res == PKT_ERRO) {
-        printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
+        printf("[BACKUP:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
 
@@ -284,7 +174,7 @@ void restaura(struct connection_t *conn) {
     // Verifica se arquivo existe, senão manda erro e sai
     string msg = "[RESTAURA]: Nome do arquivo";
     vector<uint8_t> umsg;
-    int res, round, interval = PACKET_TIMEOUT_INTERVAL;
+    int res;
     struct packet_t s_pkt, r_pkt;
 
     // Pega nome do arquivo e coloca em umsg
@@ -293,48 +183,16 @@ void restaura(struct connection_t *conn) {
 
     s_pkt = conn->make_packet(PKT_RESTAURA, umsg);
 
-    // Envia menssagem nome até receber PKT_ERRO ou PKT_OK
-    for (round = 0; round < PACKET_RETRASMISSION_ROUNDS; round++) {
-#ifdef DEBUG
-        printf("[DEBUG]: Tentativa (%d\\%d)\n", round+1, PACKET_RETRASMISSION_ROUNDS);
-#endif
-        // Se receber pacote corrompido então envia nack,caso servidor
-        // tenha mandado OK_TAM mas corrompeu.
-        if (round != 0 && res == PKT_UNKNOW) {
-            if (conn->send_nack() < 0) {
-                printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-                return;
-            }
-        }else {
-            if (conn->send_packet(&s_pkt) < 0) {
-                printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-                return;
-            }
-        }
-        res = conn->recv_packet(interval, &r_pkt);
-        // Se deu algum erro, não quer dizer que packet é do
-        // tipo PKT_ERRO ou PKT_NACK
-        if (res < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-        // Se receber NACK continua enviando. Caso contrario
-        if (res == PKT_OK_TAM || res == PKT_ERRO) {
-            // Salva pacote lido e recebido
-            conn->save_last_recv(&r_pkt);
-            conn->save_last_send(&s_pkt);
-
-            break;
-        }
-    }
+    // Habilita flag de nacks, ela permite enviar nack ao receber unknow pkt
+    res = conn->send_await_packet(&s_pkt, &r_pkt,
+                {PKT_ERRO, PKT_OK_TAM}, PACKET_TIMEOUT_INTERVAL, true);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
-    if (round == PACKET_RETRASMISSION_ROUNDS) {
-        printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
+    if (res == PKT_TIMEOUT) {
+        printf("[RESTAURA:TIMEOUT]: Ocorreu timeout tentando restaurar arquivo\n");
         return;
     }
-
     if (res == PKT_ERRO) {
-        printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
+        printf("[RESTAURA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
     // Senão tiver espaço manda erro.
