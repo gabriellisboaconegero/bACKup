@@ -134,6 +134,8 @@ void restaura2(struct connection_t *conn) {
             return;
         }
 
+        // Timeout de deconexão. Ficou muito tempo esperando receber dados.
+        // É esperado que RECEIVER_MAX_TIMEOUT seja alto.
         if (res == PKT_TIMEOUT) {
             printf("[TIMEOUT]: Cliente ficou inativo por muito tempo\n");
             printf("[TIMEOUT]: Cancelando operação de RESTAURA\n");
@@ -144,6 +146,7 @@ void restaura2(struct connection_t *conn) {
             continue;
         }
 
+        // Verifica se já processou o pacote
         if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
 #ifdef DEBUG
             printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
