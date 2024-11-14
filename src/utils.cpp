@@ -57,8 +57,8 @@ void print_packet(struct packet_t *pkt) {
     }
     printf("(tipo: %s, seq: %d, size: %d): ",
                     tipo_to_str(pkt->tipo), pkt->seq, pkt->tam);
-    for (int i = 0; i < int(pkt->dados.size()); i++)
-        cout << pkt->dados[i];
+    for (auto it = pkt->dados.begin();  it != pkt->dados.end() && *it != '\0'; it++)
+        cout << *it;
     cout << endl;
 }
 

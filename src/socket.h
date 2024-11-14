@@ -137,7 +137,7 @@ struct connection_t {
     // Retorna MSG_TO_BIG caso a menssagem tenha mais de 63 bytes
     // Retorna SEND_ERR em caso de erro ao fazer send
     // Retorna OK c.c
-    struct packet_t make_packet(int tipo, std::vector<uint8_t> &umsg);
+    struct packet_t make_packet(int tipo, std::vector<uint8_t> umsg);
 
     int send_packet(struct packet_t *pkt, int save = 0);
 

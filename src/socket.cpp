@@ -67,10 +67,6 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     // buf[1] = 0bttttttss
     // buf[2] = 0bsssTTTTT
 
-    // Quer dizer que não tem a quantidade correta de bytes enviados em dados
-    if (int(buf.size()) < PACKET_MIN_SIZE)
-        return false;
-
     // Verifica crc 8 bits dos campos tam, seq, tipo, dados e crc.
     // Para fazer a verificação basta verificar se crc8 aplicado nos
     // campos tam, tipo, seq, dados e crc são 0.
@@ -91,13 +87,9 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     // Pega tipo
     this->tipo = buf[2] & 0x1f;
 
-    // Verifica se dados estão no tamanho correto
-    if (int(buf.size()) - PACKET_MIN_SIZE != int(this->tam))
-        return false;
-
     // Copia os dados da menssagem, que começam depois de mi, tam, seq e tipo e acabam antes de crc
-    this->dados.resize(tam, 0);
-    copy(buf.begin()+3, buf.begin()+3+this->tam, this->dados.begin());
+    this->dados.resize(PACKET_MAX_DADOS_SIZE, 0);
+    copy(buf.begin()+3, buf.begin()+3+PACKET_MAX_DADOS_SIZE, this->dados.begin());
 
     return true;
 }
@@ -108,7 +100,7 @@ vector<uint8_t> packet_t::serialize() {
     // buf[0] = 0bmmmmmmmm
     // buf[1] = 0bttttttss
     // buf[2] = 0bsssTTTTT
-    vector<uint8_t> buf(PACKET_MIN_SIZE+this->dados.size(), 0);
+    vector<uint8_t> buf(PACKET_MAX_SIZE, 0);
 
     // Marcador de inicio (m)
     buf[0] = PACKET_MI;
@@ -150,8 +142,8 @@ bool is_valid_packet(struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
         return false;
 #endif
 
-    // Necessariamente tem marcador de inicio, tam, seq, tipo e crc, somando da 4 bytes
-    if (buf.size() < PACKET_MIN_SIZE)
+    // Pacote tem sempre o mesmo tamanho.
+    if (buf.size() != PACKET_MAX_SIZE)
         return false;
 
     // Verifica Marcador de inicio
@@ -170,6 +162,10 @@ bool connection_t::connect(const char *interface) {
     this->socket = cria_raw_socket(interface);
     this->seq = 0;
     this->first_pkt = true;
+    this->last_pkt_send.dados.clear();
+    this->last_pkt_recv.dados.clear();
+    this->last_pkt_send.dados.resize(PACKET_MAX_DADOS_SIZE, '\0');
+    this->last_pkt_recv.dados.resize(PACKET_MAX_DADOS_SIZE, '\0');
     if (this->socket < 0)
         return false;
     return true;
@@ -247,7 +243,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         }
         if (rand() % 1000 < CURRUPTED_PACKET_CHANCE) {
             printf("[SIMULATION]: Pacote corrompido\n");
-            buf[2] = '4';
+            buf[2]++;
         }
 #endif
         // Se o pacote for valido então retona Ok
@@ -360,46 +356,42 @@ int connection_t::send_await_packet(
     return res;
 }
 
-struct packet_t connection_t::make_packet(int tipo, vector<uint8_t> &umsg) {
+struct packet_t connection_t::make_packet(int tipo, vector<uint8_t> umsg) {
     struct packet_t pkt;
-    // Trunca menssagem, problema do usuário se ele mandar
+    // Trunca menssagem para 63 bytes sempre, problema do usuário se ele mandar
     // dados muito grande.
-    if (umsg.size() > 63)
-        pkt.dados.resize(63);
-    else
-        pkt.dados.resize(umsg.size());
+    pkt.dados.clear();
+    pkt.dados.resize(PACKET_MAX_DADOS_SIZE, '\0');
 
-    pkt.tam = (uint8_t)(umsg.size());
+    pkt.tam = min((uint8_t)(PACKET_MAX_DADOS_SIZE), (uint8_t)(umsg.size()));
     // Coloca sequência do pacote a ser enviado
     pkt.seq = this->seq;
     pkt.tipo = tipo;
-    copy_n(umsg.begin(), pkt.dados.size(), pkt.dados.begin());
+    // Copia no maximo o tamanho do buffer de dados
+    copy_n(umsg.begin(), pkt.tam, pkt.dados.begin());
 
     return pkt;
 }
 
 int connection_t::send_erro(uint8_t erro_id, int save) {
-    vector<uint8_t> umsg(14, 0);
+    vector<uint8_t> umsg(1, 0);
     umsg[0] = erro_id;
     struct packet_t pkt = make_packet(PKT_ERRO, umsg);
     return this->send_packet(&pkt, save);
 }
 
 int connection_t::send_nack() {
-    vector<uint8_t> umsg(14, 0);
-    struct packet_t pkt = make_packet(PKT_NACK, umsg);
+    struct packet_t pkt = make_packet(PKT_NACK, {'n','a','c','k'});
     return this->send_packet(&pkt);
 }
 
 int connection_t::send_ack(int save) {
-    vector<uint8_t> umsg(14, 0);
-    struct packet_t pkt = make_packet(PKT_ACK, umsg);
+    struct packet_t pkt = make_packet(PKT_ACK, {'a','c','k'});
     return this->send_packet(&pkt, save);
 }
 
 int connection_t::send_ok(int save) {
-    vector<uint8_t> umsg(14, 0);
-    struct packet_t pkt = make_packet(PKT_OK, umsg);
+    struct packet_t pkt = make_packet(PKT_OK, {'o', 'k'});
     return this->send_packet(&pkt, save);
 }
 
@@ -408,7 +400,6 @@ void connection_t::save_last_recv(struct packet_t *pkt) {
     this->last_pkt_recv.tipo = pkt->tipo;
     this->last_pkt_recv.tam = pkt->tam;
     this->last_pkt_recv.seq = pkt->seq;
-    this->last_pkt_recv.dados.resize(pkt->tam);
     copy(pkt->dados.begin(), pkt->dados.end(), this->last_pkt_recv.dados.begin());
     this->first_pkt = false;
 }
@@ -418,7 +409,6 @@ void connection_t::save_last_send(struct packet_t *pkt) {
     this->last_pkt_send.tipo = pkt->tipo;
     this->last_pkt_send.tam = pkt->tam;
     this->last_pkt_send.seq = pkt->seq;
-    this->last_pkt_send.dados.resize(pkt->tam);
     copy(pkt->dados.begin(), pkt->dados.end(), this->last_pkt_send.dados.begin());
     this->update_seq();
 }
