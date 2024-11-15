@@ -114,6 +114,14 @@ struct connection_t {
     bool first_pkt;
     struct sockaddr_ll addr;
 
+#ifdef SIMULATE_UNSTABLE
+    size_t packet_lost_count = 0;
+    size_t packet_currupted_count = 0;
+
+    void reset_count();
+    void print_count();
+#endif
+
     // Cria raw socket de conexão e inicializa struct.
     // Retorna false se não foi possivel criar socket.
     // Retorn true c.c.

@@ -73,7 +73,7 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     // Vide https://www.sunshine2k.de/articles/coding/crc/understanding_crc.html,
     // na seção 2.1 CRC Verification.
     if(crc8(buf.begin()+1, buf.begin()+buf.size()) != 0){
-#ifdef DEBUG
+#ifdef SIMULATE_UNSTABLE
         printf("[ERRO]: CRC incorreto\n");
 #endif
         this->tipo = PKT_UNKNOW;
@@ -155,6 +155,17 @@ bool is_valid_packet(struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
 // ===================== Packet =====================
 
 // ===================== Connection =====================
+#ifdef SIMULATE_UNSTABLE
+void connection_t::reset_count() {
+    this->packet_lost_count = 0;
+    this->packet_currupted_count = 0;
+}
+
+void connection_t::print_count() {
+    printf("[DEBUG]: Nº Pacotes Peridos: %ld\n", this->packet_lost_count);
+    printf("[DEBUG]: Nº Pacotes Corrompidos: %ld\n", this->packet_currupted_count);
+}
+#endif
 // Cria raw socket de conexão e inicializa struct.
 // Retorna false se não foi possivel criar socket.
 // Retorn true c.c.
@@ -239,10 +250,12 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
 #ifdef SIMULATE_UNSTABLE
         if (rand() % 1000 < LOST_PACKET_CHANCE) {
             printf("[SIMULATION]: Pacote perdido\n");
+            this->packet_lost_count++;
             continue;
         }
         if (rand() % 1000 < CURRUPTED_PACKET_CHANCE) {
             printf("[SIMULATION]: Pacote corrompido\n");
+            this->packet_currupted_count++;
             buf[2]++;
         }
 #endif
@@ -250,12 +263,12 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         if (!is_valid_packet(this->addr, buf))
             continue;
         if (!pkt->deserialize(buf)) {
-#ifdef DEBUG
+#ifdef SIMULATE_UNSTABLE
             printf("[DEBUG]: Recebido (tipo: UNKNOWN)\n");
 #endif
             return PKT_UNKNOW;
         }
-#ifdef DEBUG
+#ifdef SIMULATE_UNSTABLE
         printf("[DEBUG]: Recebido: "); print_packet(pkt);
 #endif
         return pkt->tipo;
@@ -282,7 +295,7 @@ int connection_t::send_packet(struct packet_t *pkt, int save) {
     // Faz o send
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
-#ifdef DEBUG
+#ifdef SIMULATE_UNSTABLE
     printf("[DEBUG]: Enviado: ");print_packet(pkt);
 #endif
 

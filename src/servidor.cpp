@@ -1,7 +1,12 @@
 #include "socket.h"
 #include "utils.h"
 #include <fstream>
+#include <filesystem>
+#include <exception>
 using namespace std;
+namespace fs = std::filesystem;
+
+#define BACKUP_FILES_PATH "backup_files"
 
 void verifica(struct connection_t *conn) {
     // Verifica se arquivo existe, senão manda erro e sai
@@ -21,12 +26,12 @@ void verifica(struct connection_t *conn) {
     printf("-------------------- VERIFICA --------------------\n");
 }
 
-void backup3(struct connection_t *conn) {
+void backup3(struct connection_t *conn, fs::path file_path) {
     struct packet_t pkt;
     int res;
     ofstream ofs;
 
-    ofs.open("teste.bkp", ofstream::out | ofstream::binary | ofstream::trunc);
+    ofs.open(file_path.c_str(), ofstream::out | ofstream::binary | ofstream::trunc);
     while (1) {
         res = conn->recv_packet(RECEIVER_MAX_TIMEOUT, &pkt);
         if (res < 0) {
@@ -68,7 +73,6 @@ void backup3(struct connection_t *conn) {
         } else if (res == PKT_FIM_TX_DADOS) { 
             // Salva ultimo recebido
             conn->save_last_recv(&pkt);
-            printf("[BACKUP3]: Fim da recepção de dados\n");
             conn->send_ack(1);
             break;
             // Qualquer coisa que não seja DADOS e FIM manda nack
@@ -77,10 +81,12 @@ void backup3(struct connection_t *conn) {
         }
     }
     ofs.close();
+    printf("[BACKUP3]: Backup do arquivo (%s) completo.\n", file_path.filename().c_str());
 }
 
-void backup2(struct connection_t *conn) {
+void backup2(struct connection_t *conn, fs::path file_path) {
     struct packet_t pkt;
+    fs::space_info sp;
     int res;
 
     while(1) {
@@ -124,8 +130,14 @@ void backup2(struct connection_t *conn) {
 #ifdef DEBUG
     printf("[DEBUG]: Tamanho recebido (%ld)\n", file_size);
 #endif
+
     // Verifica se tem espaço ná maquina para armazenar arquivo
-    if (!has_disc_space(&conn->last_pkt_recv)) {
+    sp = fs::space(BACKUP_FILES_PATH);
+    size_t available_size = sp.available;
+#ifdef DEBUG
+    printf("[DEBUG]: Espaço livre na máquina: %ld bytes\n", available_size);
+#endif
+    if (file_size >= available_size) {
         printf("[ERRO]: Sem espaço no disco para receber arquivo\n");
         conn->send_erro(NO_DISK_SPACE_ERRO, 1);
         return;
@@ -133,24 +145,38 @@ void backup2(struct connection_t *conn) {
 
     // Confirma recebimento do TAM
     conn->send_ok(1);
-    backup3(conn);
+    backup3(conn, file_path);
 }
 
 void backup(struct connection_t *conn) {
     struct packet_t pkt;
+    fs::path file_path;
+    fs::file_status file_st;
+    string msg;
 
     printf("-------------------- BACKUP --------------------\n");
-    // Se o arquivo ja existir verifica se tem acesso a ele.
-    if (get_file_name(conn->last_pkt_recv.dados)) {
-        printf("[ERRO]: Sem acesso a arquivo\n");
-        conn->send_erro(NO_FILE_ACCESS_ERRO, 1);
-        return;
+    msg.resize(conn->last_pkt_recv.tam);
+    copy_n(conn->last_pkt_recv.dados.begin(), conn->last_pkt_recv.tam, msg.begin());
+    file_path = msg;
+#ifdef DEBUG
+    printf("[DEBUG]: Nome do arquivo recebido: %s\n", file_path.c_str());
+#endif
+    // Coloca arquivo no caminho do diretório de backup
+    file_path = (fs::current_path() / BACKUP_FILES_PATH) / file_path;
+    file_st = fs::status(file_path);
+    if (fs::exists(file_st)) {
+        if (fs::perms::none == (file_st.permissions() & fs::perms::owner_write)) {
+            printf("[ERRO]: Sem acesso a arquivo (%s)\n", file_path.c_str());
+            conn->send_erro(NO_FILE_ACCESS_ERRO, 1);
+            return;
+        }
+        printf("[WARNING]: Arquivo (%s) vai ser sobrescrito\n", file_path.c_str());
     }
 
     // Confirma recebimento do nome do arquivo
     conn->send_ok(1);
 
-    backup2(conn);
+    backup2(conn, file_path);
     printf("-------------------- BACKUP --------------------\n");
 }
 
@@ -238,9 +264,23 @@ void servidor(string interface) {
         cout << "[ERRO]: " << strerror(errno) << endl;
         exit(1);
     }
+    // Cria diretório de backup
+    try {
+        fs::create_directories(BACKUP_FILES_PATH);
+#ifdef DEBUG
+        printf("[DEBUG]: Diretório %s de backup criado\n", BACKUP_FILES_PATH);
+#endif
+    } catch (fs::filesystem_error &e) {
+        printf("[ERRO]: Ocorreu um erro ao criar diretório de backup (%s)\n", BACKUP_FILES_PATH);
+        printf("\t[ERRO]: %s\n", e.what());
+        return;
+    }
 
     while(1) {
         printf("Escutando...\n");
+#ifdef SIMULATE_UNSTABLE
+        conn.reset_count();
+#endif
         res = conn.recv_packet(0, &pkt);
         if (res < 0) {
             printf("[ERRO]: RESPOSTA(%d) Não deveria chegar aqui\n", res);
@@ -284,6 +324,9 @@ void servidor(string interface) {
             default:
                 printf("[ERRO]: Pacote ignorado (%s)\n", tipo_to_str(res));
         }
+#ifdef SIMULATE_UNSTABLE
+        conn.print_count();
+#endif
     }
     cout << "Saindo do servidor" << endl;
 }

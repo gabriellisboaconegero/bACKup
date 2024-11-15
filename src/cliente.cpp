@@ -1,7 +1,11 @@
 #include "socket.h"
 #include "utils.h"
 #include <fstream>
+#include <filesystem>
+#include <exception>
 using namespace std;
+
+namespace fs = std::filesystem;
 
 void verifica(struct connection_t *conn) {
     // Verifica se arquivo existe, senão manda erro e sai
@@ -35,7 +39,7 @@ void verifica(struct connection_t *conn) {
     }
 }
 
-void backup3(struct connection_t *conn, string file_name, size_t file_size) {
+void backup3(struct connection_t *conn, string file_name) {
     string msg;
     vector<uint8_t> umsg(PACKET_MAX_DADOS_SIZE);
     int res;
@@ -78,6 +82,7 @@ void backup3(struct connection_t *conn, string file_name, size_t file_size) {
         printf("[BACKUP3:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
         return;
     }
+    printf("Backup do arquivo (%s) completo.\n", file_name.data());
 }
 
 void backup2(struct connection_t *conn, string file_name, size_t file_size) {
@@ -106,16 +111,23 @@ void backup2(struct connection_t *conn, string file_name, size_t file_size) {
         return;
     }
 
-    backup3(conn, file_name, file_size);
+    backup3(conn, file_name);
 }
 
-void backup(struct connection_t *conn, string file_name, size_t file_size) {
+void backup(struct connection_t *conn, fs::path file_path, size_t file_size) {
     // Verifica se arquivo existe, senão manda erro e sai
     vector<uint8_t> umsg;
     int res;
     struct packet_t s_pkt, r_pkt;
 
-    // Pega nome do arquivo e coloca em umsg
+    // Pega apenas o nome do arquivo. Então pega o caaminho para ele
+    // normaliza e pega apenas o nome.
+    string file_name = file_path.filename();
+    if (file_name.size() > PACKET_MAX_DADOS_SIZE) {
+        printf("[ERRO]: Nome de arquivo grande demais (%ld). Deve ter no máximo %d\n",
+                file_name.size(), PACKET_MAX_DADOS_SIZE);
+        return;
+    }
     umsg.resize(file_name.size());
     copy(file_name.begin(), file_name.end(), umsg.begin());
 
@@ -141,7 +153,7 @@ void backup(struct connection_t *conn, string file_name, size_t file_size) {
         return;
     }
 
-    backup2(conn, file_name, file_size);
+    backup2(conn, file_path, file_size);
 }
 
 void restaura2(struct connection_t *conn) {
@@ -234,7 +246,7 @@ void cliente(string interface) {
     struct connection_t conn;
     struct packet_t pkt;
     int opt;
-    string file_name;
+    fs::path file_path;
     size_t file_size;
     vector<uint8_t> file_size_buf;
     // Apresenta opções de escolha. BACKUP, VERIFICA e RESTAURA
@@ -261,29 +273,31 @@ void cliente(string interface) {
             printf("[ERRO]: Não foi possível restabelecer a conexão: %s\n", strerror(errno));
             exit(1);
         }
+#ifdef SIMULATE_UNSTABLE
+        conn.reset_count();
+#endif
 
         switch (opts[opt]) {
+            // Chama função de fazer backup
             case PKT_BACKUP:
                 printf("Digite o caminho do arquivo: ");
-                cin >> file_name;
-                if (file_name.size() > PACKET_MAX_DADOS_SIZE) {
-                    printf("[ERRO]: Nome de arquivo grande demais (%ld). Deve ter no máximo %d\n",
-                            file_name.size(), PACKET_MAX_DADOS_SIZE);
+                cin >> file_path;
+                // Pega tamanho do arquivo, lida com erro se tiver
+                try {
+                    file_size = fs::file_size(file_path);
+                }
+                catch (fs::filesystem_error &e) {
+                    printf("[ERRO]: Não foi possível fazer backup do arquivo (%s)\n", file_path.c_str());
+                    printf("\t[ERRO]: %s\n", e.what());
                     break;
                 }
-                if (get_file_size(file_name, &file_size) < 0) {
-                    printf("[ERRO]: Não foi possível fazer backup do arquivo (%s)\n", file_name.data());
-                    printf("\t[ERRO]: %s\n", strerror(errno));
-                    break;
-                }
-                backup(&conn, file_name, file_size);
+                backup(&conn, file_path, file_size);
                 break;
-                // Chama função de verificar
             // Chama função de restaurar arquivos
             case PKT_RESTAURA:
                 restaura(&conn);
                 break;
-                // Chama função de fazer backup
+            // Chama função de verificar
             case PKT_VERIFICA:
                 verifica(&conn);
                 break;
@@ -295,6 +309,9 @@ void cliente(string interface) {
                 printf("[ERRO]: Impossivel chegar aqui (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
                 exit(1);
         }
+#ifdef SIMULATE_UNSTABLE
+        conn.print_count();
+#endif
     }
     cout << "Saindo do cliente" << endl;
 }
