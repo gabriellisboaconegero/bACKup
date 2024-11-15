@@ -24,8 +24,8 @@
 // Variaveis de teste de falha, em porcentagem
 // Exemplo: LOST_PACKET_CHANCE = 34
 // significa que tem 3,4% de chance do pacote ser perdido
-#define LOST_PACKET_CHANCE      50 // Porcentagem de quantos pacotes vão ser "perdidos"
-#define CURRUPTED_PACKET_CHANCE 50 // Porcentagem de quantos pacotes vão ser "corrompidos"
+#define LOST_PACKET_CHANCE      10 // Porcentagem de quantos pacotes vão ser "perdidos"
+#define CURRUPTED_PACKET_CHANCE 10 // Porcentagem de quantos pacotes vão ser "corrompidos"
 
 // =========== Constantes ===========
 // Marcador de Inicio

@@ -1,5 +1,6 @@
 #include "socket.h"
 #include "utils.h"
+#include <fstream>
 using namespace std;
 
 void verifica(struct connection_t *conn) {
@@ -23,7 +24,9 @@ void verifica(struct connection_t *conn) {
 void backup3(struct connection_t *conn) {
     struct packet_t pkt;
     int res;
-    
+    ofstream ofs;
+
+    ofs.open("teste.bkp", ofstream::out | ofstream::binary | ofstream::trunc);
     while (1) {
         res = conn->recv_packet(RECEIVER_MAX_TIMEOUT, &pkt);
         if (res < 0) {
@@ -56,19 +59,24 @@ void backup3(struct connection_t *conn) {
         if (res == PKT_DADOS) {
             // Salva ultimo recebido
             conn->save_last_recv(&pkt);
+
+            // Escreve conteudo no arquivo
+            ofs.write((char *)&pkt.dados[0], pkt.tam);
+
             conn->send_ack(1);
-        // FIm de transmissão
+            // FIm de transmissão
         } else if (res == PKT_FIM_TX_DADOS) { 
             // Salva ultimo recebido
             conn->save_last_recv(&pkt);
             printf("[BACKUP3]: Fim da recepção de dados\n");
             conn->send_ack(1);
             break;
-        // Qualquer coisa que não seja DADOS e FIM manda nack
+            // Qualquer coisa que não seja DADOS e FIM manda nack
         } else {
             conn->send_nack();
         }
     }
+    ofs.close();
 }
 
 void backup2(struct connection_t *conn) {
@@ -112,6 +120,10 @@ void backup2(struct connection_t *conn) {
         conn->send_nack();
     }
     
+    size_t file_size = uint8_t_to_size_t(conn->last_pkt_recv.dados);
+#ifdef DEBUG
+    printf("[DEBUG]: Tamanho recebido (%ld)\n", file_size);
+#endif
     // Verifica se tem espaço ná maquina para armazenar arquivo
     if (!has_disc_space(&conn->last_pkt_recv)) {
         printf("[ERRO]: Sem espaço no disco para receber arquivo\n");

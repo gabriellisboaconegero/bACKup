@@ -22,13 +22,39 @@ vector<uint8_t> get_file_size(struct packet_t *pkt) {
     return vector<uint8_t>(20, '#');
 }
 
-size_t get_file_size(string filename) {
-    FILE *p_file = NULL;
-    p_file = fopen(filename.c_str(),"rb");
-    fseek(p_file,0,SEEK_END);
-    int size = ftell(p_file);
-    fclose(p_file);
-    return size;
+// Pega tamanho do arquivo file_name e coloca em size.
+// Retorna -1 em caso de erro
+// Retorna 0 c.c.
+int get_file_size(string file_name, size_t *size) {
+    FILE *f = fopen(file_name.data(),"r");
+    if (f == NULL)
+        return -1;
+    if (fseek(f, 0, SEEK_END) < 0)
+        return -1;
+    *size = ftell(f);
+    fclose(f);
+    return 0;
+}
+
+vector<uint8_t> size_t_to_uint8_t(size_t v) {
+    vector<uint8_t> buf(sizeof(size_t)/sizeof(uint8_t), 0);
+    for (int i = 0; i < int(buf.size()); i++) {
+        buf[i] = (uint8_t)(v & ((1<<(sizeof(uint8_t)*8)) - 1));
+        v >>= (sizeof(uint8_t)*8);
+    }
+    return buf;
+}
+
+size_t uint8_t_to_size_t(vector<uint8_t> buf) {
+    size_t res = 0;
+    for (int i = int(sizeof(size_t))-1; i > 0; i--) {
+        res |= (size_t)(buf[i]);
+        res <<= (sizeof(uint8_t)*8);
+    }
+    // Primeiro valor não faz o shift left
+    res |= (size_t)(buf[0]);
+
+    return res;
 }
 
 const char *erro_to_str(int tipo) {
@@ -66,9 +92,9 @@ void print_packet(struct packet_t *pkt) {
     }
     printf("(tipo: %s, seq: %d, size: %d): ",
                     tipo_to_str(pkt->tipo), pkt->seq, pkt->tam);
-    for (auto it = pkt->dados.begin();  it != pkt->dados.end() && *it != '\0'; it++)
-        cout << *it;
-    cout << endl;
+    for (uint8_t i = 0; i < pkt->tam; i++)
+        printf("%x ", pkt->dados[i]);
+    printf("\n");
 }
 
 

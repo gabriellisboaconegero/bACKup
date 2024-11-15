@@ -1,5 +1,6 @@
 #include "socket.h"
 #include "utils.h"
+#include <fstream>
 using namespace std;
 
 void verifica(struct connection_t *conn) {
@@ -34,17 +35,22 @@ void verifica(struct connection_t *conn) {
     }
 }
 
-void backup3(struct connection_t *conn) {
-    string msg = "[BACKUP]: Dados do arquivo";
-    vector<uint8_t> umsg;
+void backup3(struct connection_t *conn, string file_name, size_t file_size) {
+    string msg;
+    vector<uint8_t> umsg(PACKET_MAX_DADOS_SIZE);
     int res;
     struct packet_t s_pkt, r_pkt;
+    ifstream ifs;
 
-    // Pega nome do arquivo e coloca em umsg
-    umsg.resize(msg.size());
-    copy(msg.begin(), msg.end(), umsg.begin());
-
-    for (int i = 0; i < 5; i++) {
+    // Abre arquivo e itera sobre ele até final ou erro
+    ifs.open(file_name, ifstream::binary);
+    while (ifs.good()) {
+        // Lê tamanho do buffer
+        ifs.read((char *)&umsg[0], umsg.size());
+        // Faz um resize no buffer para quantos bytes foram lidos por read.
+        // Basicamente evitar de mandar um buffer que tenha 0's no final quando terminar
+        // de ler o arquivo.
+        umsg.resize(ifs.gcount());
         s_pkt = conn->make_packet(PKT_DADOS, umsg);
         // Envia menssagem nome até receber PKT_ACK
         res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
@@ -53,6 +59,11 @@ void backup3(struct connection_t *conn) {
             printf("[BACKUP3:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
             return;
         }
+    }
+    // Para iteração por erro e não por ter acabado arquivo
+    if (!ifs.eof()) {
+        printf("[ERRO]: Algo aconteceu ao transmitir o arquivo.");
+        printf("\t[ERRO]: %s\n", strerror(errno));
     }
 
     msg = "[BACKUP]: Fim dos dados";
@@ -69,15 +80,17 @@ void backup3(struct connection_t *conn) {
     }
 }
 
-void backup2(struct connection_t *conn, string file_name) {
+void backup2(struct connection_t *conn, string file_name, size_t file_size) {
     string msg = "[BACKUP]: Tamanho do arquivo";
     vector<uint8_t> umsg;
     int res;
     struct packet_t s_pkt, r_pkt;
 
-    // Pega nome do arquivo e coloca em umsg
-    umsg.resize(msg.size());
-    copy(msg.begin(), msg.end(), umsg.begin());
+    // Pega tamanho do arquivo e coloca em umsg
+    umsg = size_t_to_uint8_t(file_size);
+#ifdef DEBUG
+    printf("[DEBUG]: Tamanho enviado (%ld)\n", file_size);
+#endif
 
     s_pkt = conn->make_packet(PKT_TAM, umsg);
 
@@ -93,10 +106,10 @@ void backup2(struct connection_t *conn, string file_name) {
         return;
     }
 
-    backup3(conn);
+    backup3(conn, file_name, file_size);
 }
 
-void backup(struct connection_t *conn, string file_name) {
+void backup(struct connection_t *conn, string file_name, size_t file_size) {
     // Verifica se arquivo existe, senão manda erro e sai
     vector<uint8_t> umsg;
     int res;
@@ -128,7 +141,7 @@ void backup(struct connection_t *conn, string file_name) {
         return;
     }
 
-    backup2(conn, file_name);
+    backup2(conn, file_name, file_size);
 }
 
 void restaura2(struct connection_t *conn) {
@@ -222,6 +235,8 @@ void cliente(string interface) {
     struct packet_t pkt;
     int opt;
     string file_name;
+    size_t file_size;
+    vector<uint8_t> file_size_buf;
     // Apresenta opções de escolha. BACKUP, VERIFICA e RESTAURA
     int opts[3] = {
         PKT_VERIFICA,
@@ -238,7 +253,7 @@ void cliente(string interface) {
     while(1) {
         printf("Escolha uma das opções:\n\t0 - VERIFICA\n\t1 - BACKUP\n\t2 - RESTAURA\n\toutro para sair\n>> ");
         cin >> opt;
-        if (opt > 3 && opt < 0)
+        if (opt > 3 || opt < 0)
             exit(1);
 
         // Limpa socket antes da próxima ação
@@ -251,7 +266,17 @@ void cliente(string interface) {
             case PKT_BACKUP:
                 printf("Digite o caminho do arquivo: ");
                 cin >> file_name;
-                backup(&conn, file_name);
+                if (file_name.size() > PACKET_MAX_DADOS_SIZE) {
+                    printf("[ERRO]: Nome de arquivo grande demais (%ld). Deve ter no máximo %d\n",
+                            file_name.size(), PACKET_MAX_DADOS_SIZE);
+                    break;
+                }
+                if (get_file_size(file_name, &file_size) < 0) {
+                    printf("[ERRO]: Não foi possível fazer backup do arquivo (%s)\n", file_name.data());
+                    printf("\t[ERRO]: %s\n", strerror(errno));
+                    break;
+                }
+                backup(&conn, file_name, file_size);
                 break;
                 // Chama função de verificar
             // Chama função de restaurar arquivos
