@@ -73,9 +73,7 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     // Vide https://www.sunshine2k.de/articles/coding/crc/understanding_crc.html,
     // na seção 2.1 CRC Verification.
     if(crc8(buf.begin()+1, buf.begin()+buf.size()) != 0){
-#ifdef SIMULATE_UNSTABLE
-        printf("[ERRO]: CRC incorreto\n");
-#endif
+        printf("[WARNING]: CRC incorreto\n");
         this->tipo = PKT_UNKNOW;
         return false;
     }
@@ -162,8 +160,8 @@ void connection_t::reset_count() {
 }
 
 void connection_t::print_count() {
-    printf("[DEBUG]: Nº Pacotes Peridos: %ld\n", this->packet_lost_count);
-    printf("[DEBUG]: Nº Pacotes Corrompidos: %ld\n", this->packet_currupted_count);
+    printf("[SIMULATION]: Nº Pacotes Peridos: %ld\n", this->packet_lost_count);
+    printf("[SIMULATION]: Nº Pacotes Corrompidos: %ld\n", this->packet_currupted_count);
 }
 #endif
 // Cria raw socket de conexão e inicializa struct.
@@ -186,7 +184,7 @@ bool connection_t::connect(const char *interface) {
 // para não receber demais.
 // Retorna false em caso de erro
 // Retorna true c.c.
-bool connection_t::reset_connection(const char *interface) {
+bool connection_t::reset_connection() {
     // Faz loop não bloqueante para retirar menssagens
     char buf[1024];
     while (recv(this->socket, buf, sizeof(buf), MSG_DONTWAIT) > 0);

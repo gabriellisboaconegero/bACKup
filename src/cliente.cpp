@@ -40,7 +40,6 @@ void verifica(struct connection_t *conn) {
 }
 
 void backup3(struct connection_t *conn, string file_name) {
-    string msg;
     vector<uint8_t> umsg(PACKET_MAX_DADOS_SIZE);
     int res;
     struct packet_t s_pkt, r_pkt;
@@ -70,11 +69,7 @@ void backup3(struct connection_t *conn, string file_name) {
         printf("\t[ERRO]: %s\n", strerror(errno));
     }
 
-    msg = "[BACKUP]: Fim dos dados";
-    umsg.resize(msg.size());
-    copy(msg.begin(), msg.end(), umsg.begin());
-
-    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, umsg);
+    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, {});
     // Envia menssagem nome até receber PKT_ACK
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
@@ -86,7 +81,6 @@ void backup3(struct connection_t *conn, string file_name) {
 }
 
 void backup2(struct connection_t *conn, string file_name, size_t file_size) {
-    string msg = "[BACKUP]: Tamanho do arquivo";
     vector<uint8_t> umsg;
     int res;
     struct packet_t s_pkt, r_pkt;
@@ -269,7 +263,7 @@ void cliente(string interface) {
             exit(1);
 
         // Limpa socket antes da próxima ação
-        if (!conn.reset_connection(interface.data())) {
+        if (!conn.reset_connection()) {
             printf("[ERRO]: Não foi possível restabelecer a conexão: %s\n", strerror(errno));
             exit(1);
         }

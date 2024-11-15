@@ -131,7 +131,7 @@ struct connection_t {
     // para não receber demais.
     // Retorna false em caso de erro
     // Retorna true c.c.
-    bool reset_connection(const char *interface);
+    bool reset_connection();
 
     // Espera por um pacote dado um certo intervalo. Se intervalo for 0
     // então não existe timeout.
