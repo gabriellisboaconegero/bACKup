@@ -7,16 +7,22 @@ using namespace std;
 
 namespace fs = std::filesystem;
 
-void verifica(struct connection_t *conn) {
+void verifica(struct connection_t *conn, fs::path file_path) {
     // Verifica se arquivo existe, senão manda erro e sai
-    string msg = "[VERIFICA]: Nome do arquivo";
     vector<uint8_t> umsg;
     int res;
     struct packet_t s_pkt, r_pkt;
 
-    // Pega nome do arquivo e coloca em umsg
-    umsg.resize(msg.size());
-    copy(msg.begin(), msg.end(), umsg.begin());
+    // Pega apenas o nome do arquivo. Então pega o caaminho para ele
+    // normaliza e pega apenas o nome.
+    string file_name = file_path.filename();
+    if (file_name.size() > PACKET_MAX_DADOS_SIZE) {
+        printf("[ERRO]: Nome de arquivo grande demais (%ld). Deve ter no máximo %d\n",
+                file_name.size(), PACKET_MAX_DADOS_SIZE);
+        return;
+    }
+    umsg.resize(file_name.size());
+    copy(file_name.begin(), file_name.end(), umsg.begin());
 
     s_pkt = conn->make_packet(PKT_VERIFICA, umsg);
 
@@ -32,7 +38,12 @@ void verifica(struct connection_t *conn) {
     }
 
     // Calcula cksum também e verifica se é igual
-    if (calculate_cksum() == r_pkt.dados) {
+    if (calculate_cksum(file_path, &umsg) < 0) {
+        printf("[ERRO]: Não foi possível calcular o cksum do arquivo (%s)\n", file_path.c_str());
+        return;
+    }
+
+    if (uint8_t_to_size_t(umsg) == uint8_t_to_size_t(r_pkt.dados)) {
         printf("[VERIFICA]: CHECKSUM correto entre servidor e cliente\n");
     } else {
         printf("[VERIFICA]: CHECKSUM incorreto entre servidor e cliente\n");
@@ -293,7 +304,10 @@ void cliente(string interface) {
                 break;
             // Chama função de verificar
             case PKT_VERIFICA:
-                verifica(&conn);
+                printf("Digite o caminho do arquivo: ");
+                cin >> file_path;
+                // Pega tamanho do arquivo, lida com erro se tiver
+                verifica(&conn, file_path);
                 break;
                 // Recebeu pacote que não entendeu, então manda nack
             case PKT_NACK:

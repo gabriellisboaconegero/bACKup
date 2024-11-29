@@ -9,15 +9,39 @@ namespace fs = std::filesystem;
 #define BACKUP_FILES_PATH "backup_files"
 
 void verifica(struct connection_t *conn) {
+    vector<uint8_t> umsg;
+    struct packet_t s_pkt, r_pkt;
+    fs::path file_path;
+    fs::file_status file_st;
+    string msg;
     // Verifica se arquivo existe, senão manda erro e sai
     printf("-------------------- VERIFICA --------------------\n");
-    if (get_file_name(conn->last_pkt_recv.dados)) {
+    msg.resize(conn->last_pkt_recv.tam);
+    copy_n(conn->last_pkt_recv.dados.begin(), conn->last_pkt_recv.tam, msg.begin());
+    file_path = msg;
+#ifdef DEBUG
+    printf("[DEBUG]: Nome do arquivo recebido: %s\n", file_path.c_str());
+#endif
+    // Coloca arquivo no caminho do diretório de backup
+    file_path = (fs::current_path() / BACKUP_FILES_PATH) / file_path;
+    file_st = fs::status(file_path);
+    if (fs::exists(file_st)) {
+        if (fs::perms::none == (file_st.permissions() & fs::perms::owner_write)) {
+            printf("[ERRO]: Sem acesso a arquivo (%s)\n", file_path.c_str());
+            conn->send_erro(NO_FILE_ACCESS_ERRO, 1);
+            return;
+        }
+    } else {
+        printf("[ERRO]: Arquivo não existente (%s)\n", file_path.c_str());
         conn->send_erro(NO_FILE_ERRO, 1);
         return;
     }
-    
-    // Faz checksum do arquivo e retorna
-    vector<uint8_t> umsg = calculate_cksum();
+
+    if (calculate_cksum(file_path, &umsg) < 0) {
+        conn->send_erro(READING_FILE_ERRO, 1);
+        return;
+    }
+
     struct packet_t pkt = conn->make_packet(PKT_OK_CKSUM, umsg);
     if (conn->send_packet(&pkt, 1) < 0) {
         printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));

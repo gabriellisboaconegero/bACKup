@@ -72,6 +72,7 @@
 #define NO_FILE_ERRO            1
 #define NO_FILE_ACCESS_ERRO     2
 #define NO_DISK_SPACE_ERRO      3
+#define READING_FILE_ERRO       4
 
 // Macros de tamanho de cada campo do protocolo em bits
 #define MI_SIZE             8

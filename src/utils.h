@@ -8,10 +8,12 @@
 #include <sys/socket.h>
 #include <net/if.h>
 #include <cstdint>
+#include <filesystem>
 
+#define BYTES1K 1024
 
 bool get_file_name(std::vector<uint8_t> &name);
-std::vector<uint8_t> calculate_cksum();
+int calculate_cksum(std::filesystem::path file_path, std::vector<uint8_t> *umsg);
 bool has_disc_space(struct packet_t *pkt);
 std::vector<uint8_t> get_file_size(struct packet_t *pkt);
 int get_file_size(std::string filename, size_t *size);
