@@ -121,7 +121,7 @@ int calculate_cksum(fs::path file_path, vector<uint8_t> *umsg) {
     }
     
 #ifdef DEBUG
-    printf("[DEBUG]: cksum do arquivo (%s) é: %d\n", file_path.c_str(), crc);
+    printf("[DEBUG]: cksum do arquivo (%s) é: %u\n", file_path.c_str(), crc);
 #endif
     *umsg = size_t_to_uint8_t(crc);
 
