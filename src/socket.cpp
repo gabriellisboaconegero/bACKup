@@ -237,7 +237,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         // Trunca para quantos bytes foram recebidos
         buf.resize(msg_len);
 
-#ifdef DEBUG2
+#ifdef DEBUG3
         printf("%ld\n", msg_len);
         for (auto i : buf)
             printf("%x ", i);
@@ -261,12 +261,12 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         if (!is_valid_packet(this->addr, buf))
             continue;
         if (!pkt->deserialize(buf)) {
-#ifdef SIMULATE_UNSTABLE
+#if DEBUG2
             printf("[DEBUG]: Recebido (tipo: UNKNOWN)\n");
 #endif
             return PKT_UNKNOW;
         }
-#ifdef SIMULATE_UNSTABLE
+#ifdef DEBUG2
         printf("[DEBUG]: Recebido: "); print_packet(pkt);
 #endif
         return pkt->tipo;
@@ -293,7 +293,7 @@ int connection_t::send_packet(struct packet_t *pkt, int save) {
     // Faz o send
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
-#ifdef SIMULATE_UNSTABLE
+#ifdef DEBUG2
     printf("[DEBUG]: Enviado: ");print_packet(pkt);
 #endif
 

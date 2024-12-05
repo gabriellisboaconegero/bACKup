@@ -70,7 +70,7 @@ void backup3(struct connection_t *conn, string file_name) {
         res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
         // Se alcançou o maximo de retransmissões, marca que teve timeout
         if (res == PKT_TIMEOUT) {
-            printf("[BACKUP3:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
+            printf("[TIMEOUT]: Ocorreu timeout tentando transmitir arquivo\n");
             return;
         }
     }
@@ -161,10 +161,12 @@ void backup(struct connection_t *conn, fs::path file_path, size_t file_size) {
     backup2(conn, file_path, file_size);
 }
 
-void restaura2(struct connection_t *conn) {
+void restaura2(struct connection_t *conn, fs::path file_path) {
     struct packet_t pkt;
     int res;
-    
+    ofstream ofs;
+
+    ofs.open(file_path.c_str(), ofstream::out | ofstream::binary | ofstream::trunc);
     while (1) {
         res = conn->recv_packet(RECEIVER_MAX_TIMEOUT, &pkt);
         if (res < 0) {
@@ -179,6 +181,7 @@ void restaura2(struct connection_t *conn) {
             printf("[TIMEOUT]: Cancelando operação de RESTAURA\n");
             return;
         }
+
         if (res == PKT_UNKNOW) {
             conn->send_nack();
             continue;
@@ -196,31 +199,53 @@ void restaura2(struct connection_t *conn) {
         if (res == PKT_DADOS) {
             // Salva ultimo recebido
             conn->save_last_recv(&pkt);
+
+            // Escreve conteudo no arquivo
+            ofs.write((char *)&pkt.dados[0], pkt.tam);
+
             conn->send_ack(1);
-        // FIm de transmissão
+            // FIm de transmissão
         } else if (res == PKT_FIM_TX_DADOS) { 
             // Salva ultimo recebido
             conn->save_last_recv(&pkt);
-            printf("[RESTAURA2]: Fim da recepção de dados\n");
             conn->send_ack(1);
             break;
-        // Qualquer coisa que não seja DADOS e FIM manda nack
+            // Qualquer coisa que não seja DADOS e FIM manda nack
         } else {
             conn->send_nack();
         }
     }
+    ofs.close();
+    printf("[RESTAURA2]: Restauramento do arquivo (%s) completo.\n", file_path.filename().c_str());
 }
 
-void restaura(struct connection_t *conn) {
-    // Verifica se arquivo existe, senão manda erro e sai
-    string msg = "[RESTAURA]: Nome do arquivo";
+void restaura(struct connection_t *conn, fs::path file_path) {
     vector<uint8_t> umsg;
     int res;
     struct packet_t s_pkt, r_pkt;
+    fs::space_info sp;
+    fs::file_status file_st;
+    string file_name;
 
-    // Pega nome do arquivo e coloca em umsg
-    umsg.resize(msg.size());
-    copy(msg.begin(), msg.end(), umsg.begin());
+    file_name = file_path.filename();
+    file_path = (fs::current_path() / RESTORE_FILES_PATH) / file_name;
+    file_st = fs::status(file_path);
+    if (fs::exists(file_st)) {
+        if (fs::perms::none == (file_st.permissions() & fs::perms::owner_write)) {
+            printf("[ERRO]: Sem acesso a arquivo (%s)\n", file_path.c_str());
+            return;
+        }
+        printf("[WARNING]: Arquivo (%s) vai ser sobrescrito\n", file_path.c_str());
+    }
+
+    // Verifica se tamanho do nome do arquivo está no tamanho correto
+    if (file_name.size() > PACKET_MAX_DADOS_SIZE) {
+        printf("[ERRO]: Nome de arquivo grande demais (%ld). Deve ter no máximo %d\n",
+                file_name.size(), PACKET_MAX_DADOS_SIZE);
+        return;
+    }
+    umsg.resize(file_name.size());
+    copy(file_name.begin(), file_name.end(), umsg.begin());
 
     s_pkt = conn->make_packet(PKT_RESTAURA, umsg);
 
@@ -229,22 +254,34 @@ void restaura(struct connection_t *conn) {
                 {PKT_ERRO, PKT_OK_TAM}, PACKET_TIMEOUT_INTERVAL, true);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (res == PKT_TIMEOUT) {
-        printf("[RESTAURA:TIMEOUT]: Ocorreu timeout tentando restaurar arquivo\n");
+        printf("[TIMEOUT]: Ocorreu timeout tentando restaurar arquivo\n");
         return;
     }
     if (res == PKT_ERRO) {
-        printf("[RESTAURA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
+        printf("[ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
-    // Senão tiver espaço manda erro.
-    if (!has_disc_space(&r_pkt)) {
+
+    size_t file_size = uint8_t_to_size_t(conn->last_pkt_recv.dados);
+#ifdef DEBUG
+    printf("[DEBUG]: Tamanho recebido (%ld)\n", file_size);
+#endif
+
+    // Verifica se tem espaço ná maquina para armazenar arquivo
+    sp = fs::space(BACKUP_FILES_PATH);
+    size_t available_size = sp.available;
+#ifdef DEBUG
+    printf("[DEBUG]: Espaço livre na máquina: %ld bytes\n", available_size);
+#endif
+    if (file_size >= available_size) {
+        printf("[ERRO]: Sem espaço no disco para receber arquivo\n");
         conn->send_erro(NO_DISK_SPACE_ERRO, 1);
         return;
     }
-    //  Envia OK para sinalizar que pode receber os arquivos
+    //  Envia OK para sinalizar que pode receber o arquivo
     conn->send_ok(1);
 
-    restaura2(conn);
+    restaura2(conn, file_path);
 }
 
 void cliente(string interface) {
@@ -265,6 +302,18 @@ void cliente(string interface) {
         cout << "[ERRO]: Erro ao criar conexão com interface (" << interface << ")" << endl;
         cout << "[ERRO]: " << strerror(errno) << endl;
         exit(1);
+    }
+
+    // Cria diretório de backup
+    try {
+        fs::create_directories(RESTORE_FILES_PATH);
+#ifdef DEBUG
+        printf("[DEBUG]: Diretório %s de restauramento criado\n", RESTORE_FILES_PATH);
+#endif
+    } catch (fs::filesystem_error &e) {
+        printf("[ERRO]: Ocorreu um erro ao criar diretório de restauramento (%s)\n", RESTORE_FILES_PATH);
+        printf("\t[ERRO]: %s\n", e.what());
+        return;
     }
 
     while(1) {
@@ -300,7 +349,9 @@ void cliente(string interface) {
                 break;
             // Chama função de restaurar arquivos
             case PKT_RESTAURA:
-                restaura(&conn);
+                printf("Digite o caminho do arquivo: ");
+                cin >> file_path;
+                restaura(&conn, file_path);
                 break;
             // Chama função de verificar
             case PKT_VERIFICA:

@@ -6,6 +6,9 @@ all: obj exe exe/cliente exe/servidor
 debug2: CPPFLAGS+= -DDEBUG2
 debug2: debug
 
+debug3: CPPFLAGS+= -DDEBUG3
+debug3: debug2
+
 faildebug: CPPFLAGS+= -DSIMULATE_UNSTABLE
 faildebug: debug
 

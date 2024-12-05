@@ -28,6 +28,10 @@
 #define CURRUPTED_PACKET_CHANCE 10 // Porcentagem de quantos pacotes vão ser "corrompidos"
 
 // =========== Constantes ===========
+// Diretório de backup e restaura
+#define BACKUP_FILES_PATH  "backup_files"
+#define RESTORE_FILES_PATH "restore_files"
+
 // Marcador de Inicio
 #define PACKET_MI 0x7e // 0b01111110
 
@@ -80,6 +84,7 @@
 #define SEQ_SIZE            5
 #define TIPO_SIZE           5
 #define CRC_SIZE            8
+
 // Tamanho minimo e maximo de packet, seq e dados (em bytes)
 #define PACKET_MIN_SIZE         ((MI_SIZE + TAM_SIZE + SEQ_SIZE + TIPO_SIZE + CRC_SIZE)/8)
 #define PACKET_MAX_DADOS_SIZE   ((1<<TAM_SIZE)-1)

@@ -6,14 +6,13 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-#define BACKUP_FILES_PATH "backup_files"
-
 void verifica(struct connection_t *conn) {
     vector<uint8_t> umsg;
     struct packet_t s_pkt, r_pkt;
     fs::path file_path;
     fs::file_status file_st;
     string msg;
+
     // Verifica se arquivo existe, senão manda erro e sai
     printf("-------------------- VERIFICA --------------------\n");
     msg.resize(conn->last_pkt_recv.tam);
@@ -204,56 +203,89 @@ void backup(struct connection_t *conn) {
     printf("-------------------- BACKUP --------------------\n");
 }
 
-void restaura2(struct connection_t *conn) {
-    string msg = "[RESTAURA]: Dados do arquivo";
-    vector<uint8_t> umsg;
+void restaura2(struct connection_t *conn, fs::path file_path) {
+    vector<uint8_t> umsg(PACKET_MAX_DADOS_SIZE);
     int res;
     struct packet_t s_pkt, r_pkt;
+    ifstream ifs;
 
-    // Pega nome do arquivo e coloca em umsg
-    umsg.resize(msg.size());
-    copy(msg.begin(), msg.end(), umsg.begin());
-
-    // Loop pelas partes do arquivo
-    for (int i = 0; i < 5; i++) {
+    // Abre arquivo e itera sobre ele até final ou erro
+    ifs.open(file_path, ifstream::binary);
+    while (ifs.good()) {
+        // Lê tamanho do buffer
+        ifs.read((char *)&umsg[0], umsg.size());
+        // Faz um resize no buffer para quantos bytes foram lidos por read.
+        // Basicamente evitar de mandar um buffer que tenha 0's no final quando terminar
+        // de ler o arquivo.
+        umsg.resize(ifs.gcount());
         s_pkt = conn->make_packet(PKT_DADOS, umsg);
         // Envia menssagem nome até receber PKT_ACK
         res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
         // Se alcançou o maximo de retransmissões, marca que teve timeout
         if (res == PKT_TIMEOUT) {
-            printf("[RESTAURA2:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
+            printf("[TIMEOUT]: Ocorreu timeout tentando transmitir arquivo\n");
             return;
         }
     }
+    // Para iteração por erro e não por ter acabado arquivo
+    if (!ifs.eof()) {
+        printf("[ERRO]: Algo aconteceu ao transmitir o arquivo.");
+        printf("\t[ERRO]: %s\n", strerror(errno));
+    }
 
-    msg = "[RESTAURA]: Fim dos dados";
-    umsg.resize(msg.size());
-    copy(msg.begin(), msg.end(), umsg.begin());
-
-    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, umsg);
+    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, {});
     // Envia menssagem nome até receber PKT_ACK
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (res == PKT_TIMEOUT) {
-        printf("[RESTAURA2:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
+        printf("[TIMEOUT]: Ocorreu timeout tentando finalizar transmissão do arquivo\n");
         return;
     }
+    printf("Transmissão do arquivo (%s) completo.\n", file_path.filename().c_str());
 }
 
 void restaura(struct connection_t *conn) {
+    vector<uint8_t> umsg;
     struct packet_t s_pkt, r_pkt;
+    fs::path file_path;
+    fs::file_status file_st;
+    string msg;
+    size_t file_size;
     int res;
 
     printf("-------------------- RESTAURA --------------------\n");
-    // Se o arquivo ja existir verifica se tem acesso a ele.
-    if (get_file_name(conn->last_pkt_recv.dados)) {
-        printf("[ERRO]: Sem acesso a arquivo\n");
-        conn->send_erro(NO_FILE_ACCESS_ERRO, 1);
+    msg.resize(conn->last_pkt_recv.tam);
+    copy_n(conn->last_pkt_recv.dados.begin(), conn->last_pkt_recv.tam, msg.begin());
+    file_path = msg;
+#ifdef DEBUG
+    printf("[DEBUG]: Nome do arquivo recebido: %s\n", file_path.c_str());
+#endif
+    // Pega arquivo que deve estar no diretório de backup
+    file_path = (fs::current_path() / BACKUP_FILES_PATH) / file_path;
+    file_st = fs::status(file_path);
+    if (fs::exists(file_st)) {
+        if (fs::perms::none == (file_st.permissions() & fs::perms::owner_write)) {
+            printf("[ERRO]: Sem acesso a arquivo (%s)\n", file_path.c_str());
+            conn->send_erro(NO_FILE_ACCESS_ERRO, 1);
+            return;
+        }
+    } else {
+        printf("[ERRO]: Arquivo não existente (%s)\n", file_path.c_str());
+        conn->send_erro(NO_FILE_ERRO, 1);
         return;
     }
 
-    vector<uint8_t> file_size = get_file_size(&conn->last_pkt_recv);
-    s_pkt = conn->make_packet(PKT_OK_TAM, file_size);
+    try {
+        file_size = fs::file_size(file_path);
+    }
+    catch (fs::filesystem_error &e) {
+        printf("[ERRO]: Não foi possível restaurar arquivo (%s)\n", file_path.c_str());
+        printf("\t[ERRO]: %s\n", e.what());
+        conn->send_erro(READING_FILE_ERRO, 1);
+        return;
+    }
+
+    s_pkt = conn->make_packet(PKT_OK_TAM, size_t_to_uint8_t(file_size));
 
     // Habilita flag de nacks, ela permite enviar nack ao receber unknow pkt
     res = conn->send_await_packet(&s_pkt, &r_pkt,
@@ -268,7 +300,7 @@ void restaura(struct connection_t *conn) {
         return;
     }
 
-    restaura2(conn);
+    restaura2(conn, file_path);
     printf("-------------------- RESTAURA --------------------\n");
 }
 

@@ -156,7 +156,7 @@ const char *erro_to_str(int tipo) {
     switch (tipo) {
         case NO_FILE_ERRO:          return "Arquivo inexistente"; break;
         case NO_FILE_ACCESS_ERRO:   return "Arquivo com acesso negado"; break;
-        case NO_DISK_SPACE_ERRO:    return "Sem espaço em disco para tamanho colicitado"; break;
+        case NO_DISK_SPACE_ERRO:    return "Sem espaço em disco para tamanho solicitado"; break;
         case READING_FILE_ERRO:     return "Erro lendo arquivo"; break;
     }
     return "[ERRO]: Unreachable";
