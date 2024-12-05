@@ -170,3 +170,132 @@ int get_interfaces(vector<string> &interface_names) {
     return 0;
 }
 
+int send_file(struct connection_t *conn, fs::path file_path) {
+    vector<uint8_t> umsg(PACKET_MAX_DADOS_SIZE);
+    int res;
+    struct packet_t s_pkt, r_pkt;
+    ifstream ifs;
+
+    // Abre arquivo e itera sobre ele até final ou erro
+    ifs.open(file_path, ifstream::binary);
+    while (ifs.good()) {
+        // Lê tamanho do buffer
+        ifs.read((char *)&umsg[0], umsg.size());
+        // Faz um resize no buffer para quantos bytes foram lidos por read.
+        // Basicamente evitar de mandar um buffer que tenha 0's no final quando terminar
+        // de ler o arquivo.
+        umsg.resize(ifs.gcount());
+        s_pkt = conn->make_packet(PKT_DADOS, umsg);
+        // Envia menssagem nome até receber PKT_ACK
+        res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
+        // Se alcançou o maximo de retransmissões, marca que teve timeout
+        if (res == PKT_TIMEOUT) {
+            printf("[TIMEOUT]: Ocorreu timeout tentando transmitir arquivo\n");
+            return -1;
+        }
+    }
+    // Para iteração por erro e não por ter acabado arquivo
+    // Não retorna ainda, manda FIM_TX
+    if (!ifs.eof()) {
+        printf("[ERRO]: Algo aconteceu ao transmitir o arquivo.");
+        printf("\t[ERRO]: %s\n", strerror(errno));
+    }
+
+    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, "");
+    // Envia menssagem nome até receber PKT_ACK
+    res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
+    // Se alcançou o maximo de retransmissões, marca que teve timeout
+    if (res == PKT_TIMEOUT) {
+        printf("[TIMEOUT]: Ocorreu timeout tentando finalizar transmissão do arquivo\n");
+        return -1;
+    }
+    printf("[SEND_FILE]: Transmissão do arquivo (%s) completo.\n", file_path.filename().c_str());
+
+    return 0;
+}
+
+int recv_file(struct connection_t *conn, fs::path file_path) {
+    struct packet_t pkt;
+    int res;
+    ofstream ofs;
+
+    ofs.open(file_path.c_str(), ofstream::out | ofstream::binary | ofstream::trunc);
+    while (1) {
+        res = conn->recv_packet(RECEIVER_MAX_TIMEOUT, &pkt);
+        if (res < 0) {
+            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
+            return -1;
+        }
+
+        // Timeout de deconexão. Ficou muito tempo esperando receber dados.
+        // É esperado que RECEIVER_MAX_TIMEOUT seja alto.
+        if (res == PKT_TIMEOUT) {
+            printf("[TIMEOUT]: Inatividade por muito tempo. Cancelando operação\n");
+            return -1;
+        }
+
+        if (res == PKT_UNKNOW) {
+            conn->send_nack();
+            continue;
+        }
+
+        // Verifica se já processou o pacote
+        if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
+#ifdef DEBUG
+            printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
+#endif
+            conn->send_packet(&conn->last_pkt_send);
+            continue;
+        }
+        // Espera por dados, então manda ack
+        if (res == PKT_DADOS) {
+            // Salva ultimo recebido
+            conn->save_last_recv(&pkt);
+
+            // Escreve conteudo no arquivo
+            ofs.write((char *)&pkt.dados[0], pkt.tam);
+
+            conn->send_ack(1);
+            // FIm de transmissão
+        } else if (res == PKT_FIM_TX_DADOS) { 
+            // Salva ultimo recebido
+            conn->save_last_recv(&pkt);
+            conn->send_ack(1);
+            break;
+            // Qualquer coisa que não seja DADOS e FIM manda nack
+        } else {
+            conn->send_nack();
+        }
+    }
+    ofs.close();
+    printf("[RECV_FILE]: Recebimento do arquivo (%s) completo.\n", file_path.filename().c_str());
+    
+    return 0;
+}
+
+void recv_file_name(struct connection_t *conn, string *file_name) {
+    file_name->resize(conn->last_pkt_recv.tam);
+    copy_n(conn->last_pkt_recv.dados.begin(), conn->last_pkt_recv.tam, file_name->begin());
+#ifdef DEBUG
+    printf("[DEBUG]: Nome do arquivo recebido: %s\n", file_name->data());
+#endif
+}
+
+int process_file_name(fs::path *file_path, string file_name, const char *dir_path) {
+    fs::file_status file_st;
+
+    *file_path = file_name;
+    // Pega arquivo do diretório de backup
+    *file_path = (fs::current_path() / dir_path) / *file_path;
+    file_st = fs::status(*file_path);
+    // Verifica se arquivo existe, senão manda erro e sai
+    if (fs::exists(file_st)) {
+        if (fs::perms::none == (file_st.permissions() & fs::perms::owner_write)) {
+            return NO_FILE_ACCESS_ERRO;
+        }
+    } else {
+        return NO_FILE_ERRO;
+    }
+
+    return 0;
+}

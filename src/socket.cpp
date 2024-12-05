@@ -138,6 +138,8 @@ bool is_valid_packet(struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
 #ifndef DOCKER_TEST
     if (addr.sll_pkttype == PACKET_OUTGOING)
         return false;
+#else
+    (void)(addr);
 #endif
 
     // Pacote tem sempre o mesmo tamanho.

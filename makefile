@@ -10,7 +10,7 @@ debug3: CPPFLAGS+= -DDEBUG3
 debug3: debug2
 
 faildebug: CPPFLAGS+= -DSIMULATE_UNSTABLE
-faildebug: debug
+faildebug: debug2
 
 debug: CPPFLAGS+= -DDEBUG -g
 debug: all

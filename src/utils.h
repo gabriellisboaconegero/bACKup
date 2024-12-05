@@ -9,6 +9,7 @@
 #include <net/if.h>
 #include <cstdint>
 #include <filesystem>
+#include "socket.h"
 
 #define BYTES1K 1024
 
@@ -38,3 +39,7 @@ const char *erro_to_str(int tipo);
 const char *tipo_to_str(int);
 void print_packet(struct packet_t *pkt);
 int get_interfaces(std::vector<std::string> &);
+int send_file(struct connection_t *conn, std::filesystem::path file_path);
+int recv_file(struct connection_t *conn, std::filesystem::path file_path);
+void recv_file_name(struct connection_t *conn, std::string *file_name);
+int process_file_name(std::filesystem::path *file_path, std::string file_name, const char *dir_path);

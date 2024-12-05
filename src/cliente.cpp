@@ -13,24 +13,29 @@ void verifica(struct connection_t *conn, fs::path file_path) {
     int res;
     struct packet_t s_pkt, r_pkt;
 
-    // Pega apenas o nome do arquivo. Então pega o caaminho para ele
-    // normaliza e pega apenas o nome.
+    // Pega apenas o nome do arquivo.
     string file_name = file_path.filename();
+    // Verifica se nome do arquivo está correto (tamanho maximo)
     if (file_name.size() > PACKET_MAX_DADOS_SIZE) {
         printf("[ERRO]: Nome de arquivo grande demais (%ld). Deve ter no máximo %d\n",
                 file_name.size(), PACKET_MAX_DADOS_SIZE);
         return;
     }
-    s_pkt = conn->make_packet(PKT_VERIFICA, file_name);
 
+    // Envia nome do arquivo
+    s_pkt = conn->make_packet(PKT_VERIFICA, file_name);
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ERRO, PKT_OK_CKSUM}, PACKET_TIMEOUT_INTERVAL);
+    if (res < 0) {
+        printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
+        return;
+    }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (res == PKT_TIMEOUT) {
-        printf("[VERIFICA:TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
+        printf("[TIMEOUT]: Ocorreu timeout tentando verificar o arquivo\n");
         return;
     }
     if (res == PKT_ERRO) {
-        printf("[VERIFICA:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
+        printf("[ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
 
@@ -41,179 +46,87 @@ void verifica(struct connection_t *conn, fs::path file_path) {
     }
 
     if (cksum == uint8_t_to<uint>(r_pkt.dados)) {
-        printf("[VERIFICA]: CHECKSUM correto entre servidor e cliente\n");
+        printf("[VERIFICA]: CHECKSUM \x1B[1;32mcorreto\x1B[m entre servidor e cliente\n");
     } else {
-        printf("[VERIFICA]: CHECKSUM incorreto entre servidor e cliente\n");
+        printf("[VERIFICA]: CHECKSUM \x1B[1;31mincorreto\x1B[m entre servidor e cliente\n");
     }
 }
 
-void backup3(struct connection_t *conn, string file_name) {
-    vector<uint8_t> umsg(PACKET_MAX_DADOS_SIZE);
-    int res;
-    struct packet_t s_pkt, r_pkt;
-    ifstream ifs;
-
-    // Abre arquivo e itera sobre ele até final ou erro
-    ifs.open(file_name, ifstream::binary);
-    while (ifs.good()) {
-        // Lê tamanho do buffer
-        ifs.read((char *)&umsg[0], umsg.size());
-        // Faz um resize no buffer para quantos bytes foram lidos por read.
-        // Basicamente evitar de mandar um buffer que tenha 0's no final quando terminar
-        // de ler o arquivo.
-        umsg.resize(ifs.gcount());
-        s_pkt = conn->make_packet(PKT_DADOS, umsg);
-        // Envia menssagem nome até receber PKT_ACK
-        res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
-        // Se alcançou o maximo de retransmissões, marca que teve timeout
-        if (res == PKT_TIMEOUT) {
-            printf("[TIMEOUT]: Ocorreu timeout tentando transmitir arquivo\n");
-            return;
-        }
-    }
-    // Para iteração por erro e não por ter acabado arquivo
-    if (!ifs.eof()) {
-        printf("[ERRO]: Algo aconteceu ao transmitir o arquivo.");
-        printf("\t[ERRO]: %s\n", strerror(errno));
-    }
-
-    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, "");
-    // Envia menssagem nome até receber PKT_ACK
-    res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
-    // Se alcançou o maximo de retransmissões, marca que teve timeout
-    if (res == PKT_TIMEOUT) {
-        printf("[BACKUP3:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
-        return;
-    }
-    printf("Backup do arquivo (%s) completo.\n", file_name.data());
-}
-
-void backup2(struct connection_t *conn, string file_name, size_t file_size) {
-    vector<uint8_t> umsg;
+void backup2(struct connection_t *conn, fs::path file_path, size_t file_size) {
     int res;
     struct packet_t s_pkt, r_pkt;
 
-    // Pega tamanho do arquivo e coloca em umsg
-    umsg = to_uint8_t<size_t>(file_size);
 #ifdef DEBUG
     printf("[DEBUG]: Tamanho enviado (%ld)\n", file_size);
 #endif
-
-    s_pkt = conn->make_packet(PKT_TAM, umsg);
+    // Pega tamanho do arquivo e coloca em umsg
+    s_pkt = conn->make_packet(PKT_TAM, to_uint8_t<size_t>(file_size));
 
     // Envia menssagem nome até receber PKT_ERRO ou PKT_OK
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ERRO, PKT_OK}, PACKET_TIMEOUT_INTERVAL);
+    if (res < 0) {
+        printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
+        return;
+    }
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (res == PKT_TIMEOUT) {
-        printf("[BACKUP2:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
+        printf("[TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
         return;
     }
     if (res == PKT_ERRO) {
-        printf("[BACKUP2:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
+        printf("[ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
 
-    backup3(conn, file_name);
+    send_file(conn, file_path);
 }
 
-void backup(struct connection_t *conn, fs::path file_path, size_t file_size) {
+void backup(struct connection_t *conn, fs::path file_path) {
     // Verifica se arquivo existe, senão manda erro e sai
     vector<uint8_t> umsg;
     int res;
     struct packet_t s_pkt, r_pkt;
+    size_t file_size;
+    string file_name;
 
-    // Pega apenas o nome do arquivo. Então pega o caaminho para ele
-    // normaliza e pega apenas o nome.
-    string file_name = file_path.filename();
+    // Pega tamanho do arquivo
+    try {
+        file_size = fs::file_size(file_path);
+    }
+    catch (fs::filesystem_error &e) {
+        printf("[ERRO]: Não foi possível fazer backup do arquivo (%s)\n", file_path.c_str());
+        printf("\t[ERRO]: %s\n", e.what());
+        return;
+    }
+
+    // Pega apenas o nome do arquivo.
+    file_name = file_path.filename();
     if (file_name.size() > PACKET_MAX_DADOS_SIZE) {
         printf("[ERRO]: Nome de arquivo grande demais (%ld). Deve ter no máximo %d\n",
                 file_name.size(), PACKET_MAX_DADOS_SIZE);
         return;
     }
-    umsg.resize(file_name.size());
-    copy(file_name.begin(), file_name.end(), umsg.begin());
 
-    s_pkt = conn->make_packet(PKT_BACKUP, umsg);
-
+    // Envia nome do arquivo
+    s_pkt = conn->make_packet(PKT_BACKUP, file_name);
     // envia nome do arquivo e espera por PKT_ERRO ou PKT_OK
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ERRO, PKT_OK}, PACKET_TIMEOUT_INTERVAL);
-    if (res == MSG_TO_BIG) {
-        printf("Arquivo %s tem nome grande demais. Insira arquivo com nome menor\n", file_name.data());
+    if (res < 0) {
+        printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
         return;
     }
-
-    if (res < 0)
-        return;
 
     // Se alcançou o maximo de retransmissões, marca que teve timeout
     if (res == PKT_TIMEOUT) {
-        printf("[BACKUP:TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
+        printf("[TIMEOUT]: Ocorreu timeout tentando fazer backup do arquivo\n");
         return;
     }
     if (res == PKT_ERRO) {
-        printf("[BACKUP:ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
+        printf("[ERRO]: Erro aconteceu no servidor.\n\tSERVIDOR: %s\n", erro_to_str(r_pkt.dados[0]));
         return;
     }
 
     backup2(conn, file_path, file_size);
-}
-
-void restaura2(struct connection_t *conn, fs::path file_path) {
-    struct packet_t pkt;
-    int res;
-    ofstream ofs;
-
-    ofs.open(file_path.c_str(), ofstream::out | ofstream::binary | ofstream::trunc);
-    while (1) {
-        res = conn->recv_packet(RECEIVER_MAX_TIMEOUT, &pkt);
-        if (res < 0) {
-            printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
-            return;
-        }
-
-        // Timeout de deconexão. Ficou muito tempo esperando receber dados.
-        // É esperado que RECEIVER_MAX_TIMEOUT seja alto.
-        if (res == PKT_TIMEOUT) {
-            printf("[TIMEOUT]: Cliente ficou inativo por muito tempo\n");
-            printf("[TIMEOUT]: Cancelando operação de RESTAURA\n");
-            return;
-        }
-
-        if (res == PKT_UNKNOW) {
-            conn->send_nack();
-            continue;
-        }
-
-        // Verifica se já processou o pacote
-        if (SEQ_MOD(conn->last_pkt_recv.seq) == SEQ_MOD(pkt.seq)) {
-#ifdef DEBUG
-            printf("[DEBUG]: Pacote (tipo: %s, seq: %d) já processado\n", tipo_to_str(pkt.tipo), pkt.seq);
-#endif
-            conn->send_packet(&conn->last_pkt_send);
-            continue;
-        }
-        // Espera por dados, então manda ack
-        if (res == PKT_DADOS) {
-            // Salva ultimo recebido
-            conn->save_last_recv(&pkt);
-
-            // Escreve conteudo no arquivo
-            ofs.write((char *)&pkt.dados[0], pkt.tam);
-
-            conn->send_ack(1);
-            // FIm de transmissão
-        } else if (res == PKT_FIM_TX_DADOS) { 
-            // Salva ultimo recebido
-            conn->save_last_recv(&pkt);
-            conn->send_ack(1);
-            break;
-            // Qualquer coisa que não seja DADOS e FIM manda nack
-        } else {
-            conn->send_nack();
-        }
-    }
-    ofs.close();
-    printf("[RESTAURA2]: Restauramento do arquivo (%s) completo.\n", file_path.filename().c_str());
 }
 
 void restaura(struct connection_t *conn, fs::path file_path) {
@@ -221,31 +134,25 @@ void restaura(struct connection_t *conn, fs::path file_path) {
     int res;
     struct packet_t s_pkt, r_pkt;
     fs::space_info sp;
-    fs::file_status file_st;
     string file_name;
 
     file_name = file_path.filename();
-    file_path = (fs::current_path() / RESTORE_FILES_PATH) / file_name;
-    file_st = fs::status(file_path);
-    if (fs::exists(file_st)) {
-        if (fs::perms::none == (file_st.permissions() & fs::perms::owner_write)) {
-            printf("[ERRO]: Sem acesso a arquivo (%s)\n", file_path.c_str());
-            return;
-        }
-        printf("[WARNING]: Arquivo (%s) vai ser sobrescrito\n", file_path.c_str());
-    }
-
     // Verifica se tamanho do nome do arquivo está no tamanho correto
     if (file_name.size() > PACKET_MAX_DADOS_SIZE) {
         printf("[ERRO]: Nome de arquivo grande demais (%ld). Deve ter no máximo %d\n",
                 file_name.size(), PACKET_MAX_DADOS_SIZE);
         return;
     }
-    umsg.resize(file_name.size());
-    copy(file_name.begin(), file_name.end(), umsg.begin());
 
-    s_pkt = conn->make_packet(PKT_RESTAURA, umsg);
+    res = process_file_name(&file_path, file_name, RESTORE_FILES_PATH);
+    if (res == NO_FILE_ACCESS_ERRO) {
+        printf("[ERRO]: Sem acesso a arquivo (%s)\n", file_path.c_str());
+        return;
+    }
+    if (res != 0)
+        printf("[WARNING]: Arquivo (%s) vai ser sobrescrito\n", file_path.c_str());
 
+    s_pkt = conn->make_packet(PKT_RESTAURA, file_name);
     // Habilita flag de nacks, ela permite enviar nack ao receber unknow pkt
     res = conn->send_await_packet(&s_pkt, &r_pkt,
                 {PKT_ERRO, PKT_OK_TAM}, PACKET_TIMEOUT_INTERVAL, true);
@@ -265,7 +172,7 @@ void restaura(struct connection_t *conn, fs::path file_path) {
 #endif
 
     // Verifica se tem espaço ná maquina para armazenar arquivo
-    sp = fs::space(BACKUP_FILES_PATH);
+    sp = fs::space(RESTORE_FILES_PATH);
     size_t available_size = sp.available;
 #ifdef DEBUG
     printf("[DEBUG]: Espaço livre na máquina: %ld bytes\n", available_size);
@@ -278,7 +185,7 @@ void restaura(struct connection_t *conn, fs::path file_path) {
     //  Envia OK para sinalizar que pode receber o arquivo
     conn->send_ok(1);
 
-    restaura2(conn, file_path);
+    recv_file(conn, file_path);
 }
 
 void cliente(string interface) {
@@ -286,7 +193,6 @@ void cliente(string interface) {
     struct packet_t pkt;
     int opt;
     fs::path file_path;
-    size_t file_size;
     vector<uint8_t> file_size_buf;
     // Apresenta opções de escolha. BACKUP, VERIFICA e RESTAURA
     int opts[3] = {
@@ -334,15 +240,7 @@ void cliente(string interface) {
                 printf("Digite o caminho do arquivo: ");
                 cin >> file_path;
                 // Pega tamanho do arquivo, lida com erro se tiver
-                try {
-                    file_size = fs::file_size(file_path);
-                }
-                catch (fs::filesystem_error &e) {
-                    printf("[ERRO]: Não foi possível fazer backup do arquivo (%s)\n", file_path.c_str());
-                    printf("\t[ERRO]: %s\n", e.what());
-                    break;
-                }
-                backup(&conn, file_path, file_size);
+                backup(&conn, file_path);
                 break;
             // Chama função de restaurar arquivos
             case PKT_RESTAURA:
@@ -372,7 +270,7 @@ void cliente(string interface) {
     cout << "Saindo do cliente" << endl;
 }
 
-int main(int argc, char **argv) {
+int main() {
     int num;
     cout << "Escolha a interface de rede para usar: " << endl;
     vector<string> interfaces;
