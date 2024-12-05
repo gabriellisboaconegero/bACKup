@@ -152,6 +152,7 @@ struct connection_t {
     // Retorna SEND_ERR em caso de erro ao fazer send
     // Retorna OK c.c
     struct packet_t make_packet(int tipo, std::vector<uint8_t> umsg);
+    struct packet_t make_packet(int tipo, std::string str);
 
     int send_packet(struct packet_t *pkt, int save = 0);
 

@@ -9,7 +9,7 @@ namespace fs = std::filesystem;
 
 void verifica(struct connection_t *conn, fs::path file_path) {
     // Verifica se arquivo existe, senão manda erro e sai
-    vector<uint8_t> umsg;
+    uint cksum;
     int res;
     struct packet_t s_pkt, r_pkt;
 
@@ -21,10 +21,7 @@ void verifica(struct connection_t *conn, fs::path file_path) {
                 file_name.size(), PACKET_MAX_DADOS_SIZE);
         return;
     }
-    umsg.resize(file_name.size());
-    copy(file_name.begin(), file_name.end(), umsg.begin());
-
-    s_pkt = conn->make_packet(PKT_VERIFICA, umsg);
+    s_pkt = conn->make_packet(PKT_VERIFICA, file_name);
 
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ERRO, PKT_OK_CKSUM}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
@@ -38,12 +35,12 @@ void verifica(struct connection_t *conn, fs::path file_path) {
     }
 
     // Calcula cksum também e verifica se é igual
-    if (calculate_cksum(file_path, &umsg) < 0) {
+    if (calculate_cksum(file_path, &cksum) < 0) {
         printf("[ERRO]: Não foi possível calcular o cksum do arquivo (%s)\n", file_path.c_str());
         return;
     }
 
-    if (uint8_t_to_size_t(umsg) == uint8_t_to_size_t(r_pkt.dados)) {
+    if (cksum == uint8_t_to<uint>(r_pkt.dados)) {
         printf("[VERIFICA]: CHECKSUM correto entre servidor e cliente\n");
     } else {
         printf("[VERIFICA]: CHECKSUM incorreto entre servidor e cliente\n");
@@ -80,7 +77,7 @@ void backup3(struct connection_t *conn, string file_name) {
         printf("\t[ERRO]: %s\n", strerror(errno));
     }
 
-    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, {});
+    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, "");
     // Envia menssagem nome até receber PKT_ACK
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
@@ -97,7 +94,7 @@ void backup2(struct connection_t *conn, string file_name, size_t file_size) {
     struct packet_t s_pkt, r_pkt;
 
     // Pega tamanho do arquivo e coloca em umsg
-    umsg = size_t_to_uint8_t(file_size);
+    umsg = to_uint8_t<size_t>(file_size);
 #ifdef DEBUG
     printf("[DEBUG]: Tamanho enviado (%ld)\n", file_size);
 #endif
@@ -262,7 +259,7 @@ void restaura(struct connection_t *conn, fs::path file_path) {
         return;
     }
 
-    size_t file_size = uint8_t_to_size_t(conn->last_pkt_recv.dados);
+    size_t file_size = uint8_t_to<size_t>(conn->last_pkt_recv.dados);
 #ifdef DEBUG
     printf("[DEBUG]: Tamanho recebido (%ld)\n", file_size);
 #endif

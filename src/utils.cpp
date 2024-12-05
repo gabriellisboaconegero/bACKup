@@ -4,31 +4,6 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-bool get_file_name(vector<uint8_t> &name) {
-    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
-    return false;
-}
-
-vector<uint8_t> size_t_to_uint8_t(size_t v) {
-    vector<uint8_t> buf(sizeof(size_t)/sizeof(uint8_t), 0);
-    for (int i = 0; i < int(buf.size()); i++) {
-        buf[i] = (uint8_t)(v & ((1<<(sizeof(uint8_t)*8)) - 1));
-        v >>= (sizeof(uint8_t)*8);
-    }
-    return buf;
-}
-
-size_t uint8_t_to_size_t(vector<uint8_t> buf) {
-    size_t res = 0;
-    for (int i = int(sizeof(size_t))-1; i > 0; i--) {
-        res |= (size_t)(buf[i]);
-        res <<= (sizeof(uint8_t)*8);
-    }
-    // Primeiro valor não faz o shift left
-    res |= (size_t)(buf[0]);
-
-    return res;
-}
 static unsigned long crctab[] = {
     0x00000000,
     0x04c11db7, 0x09823b6e, 0x0d4326d9, 0x130476dc, 0x17c56b6b,
@@ -96,7 +71,7 @@ uint partial_crc32(vector<uint8_t>::iterator buf_begin,
     return crc;
 }
 
-int calculate_cksum(fs::path file_path, vector<uint8_t> *umsg) {
+int calculate_cksum(fs::path file_path, uint *cksum) {
     vector<uint8_t> buf(BYTES1K);
     uint crc = 0;
     ifstream ifs;
@@ -123,32 +98,8 @@ int calculate_cksum(fs::path file_path, vector<uint8_t> *umsg) {
 #ifdef DEBUG
     printf("[DEBUG]: cksum do arquivo (%s) é: %u\n", file_path.c_str(), crc);
 #endif
-    *umsg = size_t_to_uint8_t(crc);
+    *cksum = crc;
 
-    return 0;
-}
-
-bool has_disc_space(struct packet_t *pkt) {
-    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
-    return true;
-}
-
-vector<uint8_t> get_file_size(struct packet_t *pkt) {
-    printf("[TODO]: Implementar (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
-    return vector<uint8_t>(20, '#');
-}
-
-// Pega tamanho do arquivo file_name e coloca em size.
-// Retorna -1 em caso de erro
-// Retorna 0 c.c.
-int get_file_size(string file_name, size_t *size) {
-    FILE *f = fopen(file_name.data(),"r");
-    if (f == NULL)
-        return -1;
-    if (fseek(f, 0, SEEK_END) < 0)
-        return -1;
-    *size = ftell(f);
-    fclose(f);
     return 0;
 }
 

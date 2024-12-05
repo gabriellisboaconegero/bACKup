@@ -384,6 +384,13 @@ struct packet_t connection_t::make_packet(int tipo, vector<uint8_t> umsg) {
     return pkt;
 }
 
+struct packet_t connection_t::make_packet(int tipo, string str) {
+    vector<uint8_t> umsg;
+    umsg.resize(str.size());
+    copy(str.begin(), str.end(), umsg.begin());
+    return this->make_packet(tipo, umsg);
+}
+
 int connection_t::send_erro(uint8_t erro_id, int save) {
     vector<uint8_t> umsg(1, 0);
     umsg[0] = erro_id;
@@ -392,17 +399,17 @@ int connection_t::send_erro(uint8_t erro_id, int save) {
 }
 
 int connection_t::send_nack() {
-    struct packet_t pkt = make_packet(PKT_NACK, {'n','a','c','k'});
+    struct packet_t pkt = make_packet(PKT_NACK, "nack");
     return this->send_packet(&pkt);
 }
 
 int connection_t::send_ack(int save) {
-    struct packet_t pkt = make_packet(PKT_ACK, {'a','c','k'});
+    struct packet_t pkt = make_packet(PKT_ACK, "ack");
     return this->send_packet(&pkt, save);
 }
 
 int connection_t::send_ok(int save) {
-    struct packet_t pkt = make_packet(PKT_OK, {'o', 'k'});
+    struct packet_t pkt = make_packet(PKT_OK, "ok");
     return this->send_packet(&pkt, save);
 }
 

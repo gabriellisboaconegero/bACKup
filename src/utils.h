@@ -12,13 +12,28 @@
 
 #define BYTES1K 1024
 
+template <typename T> std::vector<uint8_t> to_uint8_t(T v) {
+    std::vector<uint8_t> buf(sizeof(T)/sizeof(uint8_t), 0);
+    for (int i = 0; i < int(buf.size()); i++) {
+        buf[i] = (uint8_t)(v & ((1<<(sizeof(uint8_t)*8)) - 1));
+        v >>= (sizeof(uint8_t)*8);
+    }
+    return buf;
+}
+
+template <typename T> T uint8_t_to(std::vector<uint8_t> buf) {
+    T res = 0;
+    for (int i = int(sizeof(T))-1; i > 0; i--) {
+        res |= (T)(buf[i]);
+        res <<= (sizeof(uint8_t)*8);
+    }
+    res |= (T)(buf[0]);
+    return res;
+}
+
+
 bool get_file_name(std::vector<uint8_t> &name);
-int calculate_cksum(std::filesystem::path file_path, std::vector<uint8_t> *umsg);
-bool has_disc_space(struct packet_t *pkt);
-std::vector<uint8_t> get_file_size(struct packet_t *pkt);
-int get_file_size(std::string filename, size_t *size);
-std::vector<uint8_t> size_t_to_uint8_t(size_t v);
-size_t uint8_t_to_size_t(std::vector<uint8_t> buf);
+int calculate_cksum(std::filesystem::path file_path, uint *cksum);
 const char *erro_to_str(int tipo);
 const char *tipo_to_str(int);
 void print_packet(struct packet_t *pkt);

@@ -11,6 +11,7 @@ void verifica(struct connection_t *conn) {
     struct packet_t s_pkt, r_pkt;
     fs::path file_path;
     fs::file_status file_st;
+    uint cksum;
     string msg;
 
     // Verifica se arquivo existe, senão manda erro e sai
@@ -36,12 +37,12 @@ void verifica(struct connection_t *conn) {
         return;
     }
 
-    if (calculate_cksum(file_path, &umsg) < 0) {
+    if (calculate_cksum(file_path, &cksum) < 0) {
         conn->send_erro(READING_FILE_ERRO, 1);
         return;
     }
 
-    struct packet_t pkt = conn->make_packet(PKT_OK_CKSUM, umsg);
+    struct packet_t pkt = conn->make_packet(PKT_OK_CKSUM, to_uint8_t<uint>(cksum));
     if (conn->send_packet(&pkt, 1) < 0) {
         printf("[ERRO %s:%s:%d]: %s\n", __FILE__, __func__, __LINE__, strerror(errno));
         return;
@@ -149,7 +150,7 @@ void backup2(struct connection_t *conn, fs::path file_path) {
         conn->send_nack();
     }
     
-    size_t file_size = uint8_t_to_size_t(conn->last_pkt_recv.dados);
+    size_t file_size = uint8_t_to<size_t>(conn->last_pkt_recv.dados);
 #ifdef DEBUG
     printf("[DEBUG]: Tamanho recebido (%ld)\n", file_size);
 #endif
@@ -233,7 +234,7 @@ void restaura2(struct connection_t *conn, fs::path file_path) {
         printf("\t[ERRO]: %s\n", strerror(errno));
     }
 
-    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, {});
+    s_pkt = conn->make_packet(PKT_FIM_TX_DADOS, "");
     // Envia menssagem nome até receber PKT_ACK
     res = conn->send_await_packet(&s_pkt, &r_pkt, {PKT_ACK}, PACKET_TIMEOUT_INTERVAL);
     // Se alcançou o maximo de retransmissões, marca que teve timeout
@@ -285,7 +286,7 @@ void restaura(struct connection_t *conn) {
         return;
     }
 
-    s_pkt = conn->make_packet(PKT_OK_TAM, size_t_to_uint8_t(file_size));
+    s_pkt = conn->make_packet(PKT_OK_TAM, to_uint8_t<size_t>(file_size));
 
     // Habilita flag de nacks, ela permite enviar nack ao receber unknow pkt
     res = conn->send_await_packet(&s_pkt, &r_pkt,
