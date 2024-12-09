@@ -87,8 +87,18 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
 
     // Copia os dados da menssagem, que começam depois de mi, tam, seq e tipo e acabam antes de crc
     this->dados.resize(PACKET_MAX_DADOS_SIZE, 0);
-    copy(buf.begin()+3, buf.begin()+3+PACKET_MAX_DADOS_SIZE, this->dados.begin());
+    // copy(buf.begin()+3, buf.begin()+3+PACKET_MAX_DADOS_SIZE, this->dados.begin());
+    auto it = buf.begin() + 3; // Início dos dados no buffer
+    auto end = buf.end() - 1;  // Exclui o CRC do final
 
+    while (it != end && this->dados.size() < PACKET_MAX_DADOS_SIZE) {
+        uint8_t byte = *it++;
+        this->dados.push_back(byte);
+        // Se encontrar um byte 0x88 ou 0x81, pule o próximo byte (0xFF) se existir
+        if ((byte == 0x88 || byte == 0x81) && it != end && *it == 0xFF) {
+            ++it; // Ignora o byte 0xFF
+        }
+    }
     return true;
 }
 
@@ -114,7 +124,15 @@ vector<uint8_t> packet_t::serialize() {
     buf[2] |= this->tipo & 0x1f;       // 00011111
 
     // Coloca dados no buffer, dado offset de 3 bytes
-    copy(this->dados.begin(), this->dados.end(), buf.begin()+3);
+    // copy(this->dados.begin(), this->dados.end(), buf.begin()+3);
+    size_t offset = 3; // Início dos dados no buffer
+    for (uint8_t byte : this->dados) {
+        buf[offset++] = byte;
+        // Verifica se o byte é 0x88 ou 0x81 e insere 0xFF após ele
+        if (byte == 0x88 || byte == 0x81) {
+            buf[offset++] = 0xFF;
+        }
+    }
     // gera crc 8 bits
     
     // Crc gerado utiliza campos tam, tipo, seq e dados.
