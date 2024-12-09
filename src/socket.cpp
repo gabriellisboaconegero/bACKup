@@ -72,8 +72,11 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     // campos tam, tipo, seq, dados e crc são 0.
     // Vide https://www.sunshine2k.de/articles/coding/crc/understanding_crc.html,
     // na seção 2.1 CRC Verification.
-    if(crc8(buf.begin()+1, buf.begin()+buf.size()) != 0){
+
+    uint8_t a;
+    if((a = crc8(buf.begin()+1, buf.begin()+buf.size())) != 0){
         printf("[WARNING]: CRC incorreto\n");
+        printf("[WARNING]: CRC %x\n", a);
         this->tipo = PKT_UNKNOW;
         return false;
     }
@@ -136,7 +139,7 @@ vector<uint8_t> packet_t::serialize() {
     // gera crc 8 bits
     
     // Crc gerado utiliza campos tam, tipo, seq e dados.
-    buf.push_back(crc8(buf.begin()+1, buf.begin()+buf.size()-1));
+    buf.push_back(crc8(buf.begin()+1, buf.begin()+buf.size()));
 
     return buf;
 }
