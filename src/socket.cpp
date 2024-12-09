@@ -90,18 +90,7 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
 
     // Copia os dados da menssagem, que começam depois de mi, tam, seq e tipo e acabam antes de crc
     this->dados.resize(PACKET_MAX_DADOS_SIZE, 0);
-    // copy(buf.begin()+3, buf.begin()+3+PACKET_MAX_DADOS_SIZE, this->dados.begin());
-    auto it = buf.begin() + 3; // Início dos dados no buffer
-    auto end = buf.end() - 1;  // Exclui o CRC do final
-
-    for (int i = 0; i < int(this->dados.size()); i++) {
-        uint8_t byte = *it++;
-        this->dados[i] = byte;
-        // Se encontrar um byte 0x88 ou 0x81, pule o próximo byte (0xFF) se existir
-        if ((byte == 0x88 || byte == 0x81) && it != end && *it == 0xFF) {
-            ++it; // Ignora o byte 0xFF
-        }
-    }
+    copy(buf.begin()+3, buf.begin()+3+PACKET_MAX_DADOS_SIZE, this->dados.begin());
     return true;
 }
 
@@ -111,38 +100,30 @@ vector<uint8_t> packet_t::serialize() {
     // buf[0] = 0bmmmmmmmm
     // buf[1] = 0bttttttss
     // buf[2] = 0bsssTTTTT
-    vector<uint8_t> buf;
+    vector<uint8_t> buf(PACKET_MAX_SIZE);
 
     // Marcador de inicio (m)
-    buf.push_back(PACKET_MI);
+    buf[0] = PACKET_MI;
 
     // Tamanho (t)
-    buf.push_back(this->tam << 2);
+    buf[1] =this->tam << 2;
 
     // Sequencia (s)
     buf[1] |= (this->seq & 0x18) >> 3; // 00011000
-    buf.push_back((this->seq & 0x07) << 5); // 00000111
+    buf[2] = (this->seq & 0x07) << 5; // 00000111
 
     // Tipo (T)
     buf[2] |= this->tipo & 0x1f;       // 00011111
 
     // Coloca dados no buffer, dado offset de 3 bytes
-    // copy(this->dados.begin(), this->dados.end(), buf.begin()+3);
-    for (int i = 0; i < int(this->dados.size()); i++) {
-        uint8_t byte = this->dados[i];
-        buf.push_back(byte);
-        // Verifica se o byte é 0x88 ou 0x81 e insere 0xFF após ele
-        if (byte == 0x88 || byte == 0x81) {
-            buf.push_back(0xff);
-        }
-    }
-    // gera crc 8 bits
+    copy(this->dados.begin(), this->dados.end(), buf.begin()+3);
     
-    // Crc gerado utiliza campos tam, tipo, seq e dados.
-    buf.push_back(crc8(buf.begin()+1, buf.begin()+buf.size()));
+    // CRC8 gerado utiliza campos tam, tipo, seq e dados.
+    buf[buf.size()-1] = crc8(buf.begin()+1, buf.begin()+buf.size()-1);
 
     return buf;
 }
+
 // Valida o pacote com MI e loopback.
 // Verifica se o pacote é valido de acordo com protocolo
 // Ou seja:
@@ -214,6 +195,32 @@ bool connection_t::reset_connection() {
     return errno == EAGAIN || errno == EWOULDBLOCK;
 }
 
+vector<uint8_t> connection_t::scape_bytes(vector<uint8_t> buf) {
+    vector<uint8_t> res;
+    for (auto byte : buf) {
+        res.push_back(byte);
+        // Verifica se o byte é 0x88 ou 0x81 e insere 0xff após ele
+        if (byte == 0x88 || byte == 0x81) {
+            res.push_back(0xff);
+        }
+    }
+
+    return res;
+}
+
+vector<uint8_t> connection_t::unscape_bytes(vector<uint8_t> buf) {
+    vector<uint8_t> res;
+    for (int i = 0; i < int(buf.size()); i++) {
+        uint8_t byte = buf[i];
+        res.push_back(byte);
+        // Verifica se byte é 0x88 ou 0x81 e remove o 0xff depois
+        if ((byte == 0x88 || byte == 0x81) && i+1 < int(buf.size()) && buf[i+1] == 0xff)
+            i++;
+    }
+
+    return res;
+}
+
 long long timestamp() {
     struct timeval tp;
     gettimeofday(&tp, NULL);
@@ -229,6 +236,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
     socklen_t addr_len = sizeof(this->addr);
     long long comeco = timestamp();
     vector<uint8_t> buf;
+    vector<uint8_t> buf1;
     struct timeval timeout;
     timeout.tv_sec = interval/1000;
     timeout.tv_usec = (interval % 1000) * 1000;
@@ -238,7 +246,8 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         return RECV_ERR;
 
     do {
-        buf.resize(MAX_MSG_LEN, 0);
+        // Receber nomaximo duas vezes o tamanho devido aos scapes
+        buf.resize(2*PACKET_MAX_SIZE, 0);
 
         auto msg_len = recvfrom(this->socket, buf.data(), buf.size(), 0, (struct sockaddr*)&(this->addr), &addr_len);
         // Se tiver dado timeout continua o loop.
@@ -263,6 +272,14 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         printf("\n");
         printf("OUTGGOING: %d\n", this->addr.sll_pkttype == PACKET_OUTGOING);
 #endif
+        // "Desescapa" os bytes antes de deserializar
+        buf1 = this->unscape_bytes(buf);
+// #ifdef DEBUG3
+//         printf("%ld\n", buf1.size());
+//         for (auto i : buf1)
+//             printf("%x ", i);
+//         printf("\n");
+// #endif
 
 #ifdef SIMULATE_UNSTABLE
         if (rand() % 1000 < LOST_PACKET_CHANCE) {
@@ -273,13 +290,13 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         if (rand() % 1000 < CURRUPTED_PACKET_CHANCE) {
             printf("[SIMULATION]: Pacote corrompido\n");
             this->packet_currupted_count++;
-            buf[2]++;
+            buf1[2]++;
         }
 #endif
         // Se o pacote for valido então retona Ok
-        if (!is_valid_packet(this->addr, buf))
+        if (!is_valid_packet(this->addr, buf1))
             continue;
-        if (!pkt->deserialize(buf)) {
+        if (!pkt->deserialize(buf1)) {
 #if DEBUG2
             printf("[DEBUG]: Recebido (tipo: UNKNOWN)\n");
 #endif
@@ -301,7 +318,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
 // Retorna SEND_ERR em caso de erro ao fazer send
 // Retorna OK c.c
 int connection_t::send_packet(struct packet_t *pkt, int save) {
-    vector<uint8_t> buf = pkt->serialize();
+    vector<uint8_t> buf;
     // DEBUG: Altera um bit para verificar se CRC funciona
     // buf[3] ^= 0x80;
     // Testa corrupção de OK_TAM e NACK
@@ -309,12 +326,16 @@ int connection_t::send_packet(struct packet_t *pkt, int save) {
     //     if (rand() % 10 < 5)
     //         buf[3] = '*';
 
+    // Escapa bytes antes de mandar
+    buf = this->scape_bytes(pkt->serialize());
+
 #ifdef DEBUG3
-        printf("%ld\n", buf.size());
-        for (auto i : buf)
-            printf("%x ", i);
-        printf("\n");
+    printf("%ld\n", buf.size());
+    for (auto i : buf)
+        printf("%x ", i);
+    printf("\n");
 #endif
+
     // Faz o send
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;

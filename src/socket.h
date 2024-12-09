@@ -35,9 +35,6 @@
 // Marcador de Inicio
 #define PACKET_MI 0x7e // 0b01111110
 
-// Tamnho maximo de respo
-#define MAX_MSG_LEN 100
-
 // Polinômio gerador usando no crc8
 #define GENERATOR_POLY 0x1D
 
@@ -138,6 +135,11 @@ struct connection_t {
     // Retorna false em caso de erro
     // Retorna true c.c.
     bool reset_connection();
+
+    // Escapa os bytes 0x88 e 0x81 para evitar que placa de rede "coma" os
+    // bytes.
+    std::vector<uint8_t> scape_bytes(std::vector<uint8_t> buf);
+    std::vector<uint8_t> unscape_bytes(std::vector<uint8_t> buf);
 
     // Espera por um pacote dado um certo intervalo. Se intervalo for 0
     // então não existe timeout.
