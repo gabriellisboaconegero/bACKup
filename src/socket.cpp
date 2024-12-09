@@ -91,9 +91,9 @@ bool packet_t::deserialize(vector<uint8_t> &buf) {
     auto it = buf.begin() + 3; // Início dos dados no buffer
     auto end = buf.end() - 1;  // Exclui o CRC do final
 
-    while (it != end && this->dados.size() < PACKET_MAX_DADOS_SIZE) {
+    for (int i = 0; i < int(this->dados.size()); i++) {
         uint8_t byte = *it++;
-        this->dados.push_back(byte);
+        this->dados[i] = byte;
         // Se encontrar um byte 0x88 ou 0x81, pule o próximo byte (0xFF) se existir
         if ((byte == 0x88 || byte == 0x81) && it != end && *it == 0xFF) {
             ++it; // Ignora o byte 0xFF
@@ -108,29 +108,29 @@ vector<uint8_t> packet_t::serialize() {
     // buf[0] = 0bmmmmmmmm
     // buf[1] = 0bttttttss
     // buf[2] = 0bsssTTTTT
-    vector<uint8_t> buf(PACKET_MAX_SIZE, 0);
+    vector<uint8_t> buf;
 
     // Marcador de inicio (m)
-    buf[0] = PACKET_MI;
+    buf.push_back(PACKET_MI);
 
     // Tamanho (t)
-    buf[1] = this->tam << 2;
+    buf.push_back(this->tam << 2);
 
     // Sequencia (s)
     buf[1] |= (this->seq & 0x18) >> 3; // 00011000
-    buf[2]  = (this->seq & 0x07) << 5; // 00000111
+    buf.push_back((this->seq & 0x07) << 5); // 00000111
 
     // Tipo (T)
     buf[2] |= this->tipo & 0x1f;       // 00011111
 
     // Coloca dados no buffer, dado offset de 3 bytes
     // copy(this->dados.begin(), this->dados.end(), buf.begin()+3);
-    size_t offset = 3; // Início dos dados no buffer
-    for (uint8_t byte : this->dados) {
-        buf[offset++] = byte;
+    for (int i = 0; i < int(this->dados.size()); i++) {
+        uint8_t byte = this->dados[i];
+        buf.push_back(byte);
         // Verifica se o byte é 0x88 ou 0x81 e insere 0xFF após ele
         if (byte == 0x88 || byte == 0x81) {
-            buf[offset++] = 0xFF;
+            buf.push_back(0xff);
         }
     }
     // gera crc 8 bits
@@ -159,10 +159,6 @@ bool is_valid_packet(struct sockaddr_ll addr, std::vector<uint8_t> &buf) {
 #else
     (void)(addr);
 #endif
-
-    // Pacote tem sempre o mesmo tamanho.
-    if (buf.size() != PACKET_MAX_SIZE)
-        return false;
 
     // Verifica Marcador de inicio
     if (buf[0] != PACKET_MI)
