@@ -136,7 +136,7 @@ vector<uint8_t> packet_t::serialize() {
     // gera crc 8 bits
     
     // Crc gerado utiliza campos tam, tipo, seq e dados.
-    buf[buf.size() - 1] = crc8(buf.begin()+1, buf.begin()+buf.size()-1);
+    buf.push_back(crc8(buf.begin()+1, buf.begin()+buf.size()-1));
 
     return buf;
 }
@@ -258,7 +258,7 @@ int connection_t::recv_packet(int interval, struct packet_t *pkt) {
         for (auto i : buf)
             printf("%x ", i);
         printf("\n");
-        printf("OUTGGOING: %d\n", conn->addr.sll_pkttype == PACKET_OUTGOING);
+        printf("OUTGGOING: %d\n", this->addr.sll_pkttype == PACKET_OUTGOING);
 #endif
 
 #ifdef SIMULATE_UNSTABLE
@@ -306,6 +306,12 @@ int connection_t::send_packet(struct packet_t *pkt, int save) {
     //     if (rand() % 10 < 5)
     //         buf[3] = '*';
 
+#ifdef DEBUG3
+        printf("%ld\n", buf.size());
+        for (auto i : buf)
+            printf("%x ", i);
+        printf("\n");
+#endif
     // Faz o send
     if (send(this->socket, buf.data(), buf.size(), 0) < 0)
         return SEND_ERR;
